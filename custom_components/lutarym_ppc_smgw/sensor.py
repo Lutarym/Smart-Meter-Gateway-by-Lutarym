@@ -420,7 +420,22 @@ class PPCSmgwValueSensor(CoordinatorEntity[PPCSmgwCoordinator], SensorEntity):
                 self.entity_id,
             )
 
-        stats.append(StatisticData(start=now_hour, state=round(value, 4), sum=round(value, 4)))
+        # WICHTIG: Die laufende Stunde (now_hour) wird hier BEWUSST NICHT
+        # mehr selbst geschrieben. Home Assistants eigene stündliche
+        # Statistik-Kompilierung berechnet für dieselbe statistic_id
+        # ohnehin unabhängig einen Punkt für dieselbe Stunde aus der
+        # State-Historie. Schreiben beide für (metadata_id, start_ts) der
+        # laufenden Stunde, kollidieren sie mit einem UNIQUE-Constraint-
+        # Fehler - und weil der Recorder mehrere Entities in EINER
+        # Transaktion committet, reißt das auch alle anderen, unbeteiligten
+        # Sensoren im selben Batch mit (beobachtetes Symptom: fremde
+        # Statistik-Ketten, z.B. PV-Ertrag, blieben stundenlang hängen).
+        # Nur echte, in der Vergangenheit liegende Lücken (gap_slots)
+        # werden hier noch nachgetragen - die überschneiden sich nicht mit
+        # der laufenden Stunde und daher nicht mit der automatischen
+        # Kompilierung.
+        if not stats:
+            return
         try:
             self._self_publish_statistic(stats)
         except Exception:  # noqa: BLE001 - darf den normalen Update-Zyklus nicht stören
