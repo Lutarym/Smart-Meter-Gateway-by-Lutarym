@@ -324,6 +324,17 @@ class PPCSmgwValueSensor(CoordinatorEntity[PPCSmgwCoordinator], SensorEntity):
             self._attr_device_class = SensorDeviceClass.ENERGY
             self._attr_state_class = SensorStateClass.TOTAL_INCREASING
 
+        # Letzte Stunde, für die wir selbst bereits einen now_hour-Punkt
+        # geschrieben haben (siehe _async_self_publish_with_gap_fill) -
+        # verhindert, dass derselbe (metadata_id, start_ts) mehrfach pro
+        # Stunde per INSERT geschrieben wird (async_import_statistics
+        # macht bei internem statistic_id offenbar KEIN Upsert, sondern
+        # einen reinen Bulk-INSERT - ein zweiter Versuch für dieselbe
+        # Stunde crasht mit UNIQUE constraint failed und reißt dabei die
+        # komplette Recorder-Batch-Transaktion um, inkl. fremder,
+        # unbeteiligter Entitäten im selben Zyklus).
+        self._last_self_published_hour = None
+
     @property
     def native_value(self) -> float | None:
         data = self.coordinator.data.get(self._key)
@@ -420,22 +431,16 @@ class PPCSmgwValueSensor(CoordinatorEntity[PPCSmgwCoordinator], SensorEntity):
                 self.entity_id,
             )
 
-        # WICHTIG: Die laufende Stunde (now_hour) wird hier BEWUSST NICHT
-        # mehr selbst geschrieben. Home Assistants eigene stündliche
-        # Statistik-Kompilierung berechnet für dieselbe statistic_id
-        # ohnehin unabhängig einen Punkt für dieselbe Stunde aus der
-        # State-Historie. Schreiben beide für (metadata_id, start_ts) der
-        # laufenden Stunde, kollidieren sie mit einem UNIQUE-Constraint-
-        # Fehler - und weil der Recorder mehrere Entities in EINER
-        # Transaktion committet, reißt das auch alle anderen, unbeteiligten
-        # Sensoren im selben Batch mit (beobachtetes Symptom: fremde
-        # Statistik-Ketten, z.B. PV-Ertrag, blieben stundenlang hängen).
-        # Nur echte, in der Vergangenheit liegende Lücken (gap_slots)
-        # werden hier noch nachgetragen - die überschneiden sich nicht mit
-        # der laufenden Stunde und daher nicht mit der automatischen
-        # Kompilierung.
+        # Nur EINMAL pro Stunde selbst schreiben - siehe Kommentar zu
+        # _last_self_published_hour im Konstruktor. Echte Lücken
+        # (gap_slots oben) betreffen immer VERGANGENE, abgeschlossene
+        # Stunden und werden davon nicht eingeschränkt.
+        if self._last_self_published_hour != now_hour:
+            stats.append(StatisticData(start=now_hour, state=round(value, 4), sum=round(value, 4)))
+
         if not stats:
             return
+        wrote_now_hour = self._last_self_published_hour != now_hour
         try:
             self._self_publish_statistic(stats)
         except Exception:  # noqa: BLE001 - darf den normalen Update-Zyklus nicht stören
@@ -443,6 +448,13 @@ class PPCSmgwValueSensor(CoordinatorEntity[PPCSmgwCoordinator], SensorEntity):
                 "SMGW: Selbst-Schreiben der Statistik für '%s' fehlgeschlagen",
                 self.entity_id,
             )
+        finally:
+            # Stunde IMMER als "versucht" markieren, auch bei Fehlschlag -
+            # sonst würde z.B. eine vor dem Neustart bereits vorhandene
+            # Zeile für die laufende Stunde jeden weiteren Zyklus dieser
+            # Stunde erneut crashen lassen, statt nur einmal.
+            if wrote_now_hour:
+                self._last_self_published_hour = now_hour
 
     def _self_publish_statistic(self, stats: list[StatisticData]) -> None:
         metadata = StatisticMetaData(
