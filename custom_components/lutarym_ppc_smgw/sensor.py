@@ -13,14 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import timedelta
 
-from homeassistant.components.recorder.models import (
-    StatisticData,
-    StatisticMeanType,
-    StatisticMetaData,
-)
-from homeassistant.components.recorder.statistics import async_import_statistics
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -28,11 +21,10 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_USERNAME
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, VERSION
 from .coordinator import (
@@ -43,7 +35,6 @@ from .coordinator import (
     gateway_gueltig_ab,
     gateway_obis_status,
 )
-from .history_import import _fetch_hourly_sum
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -324,17 +315,6 @@ class PPCSmgwValueSensor(CoordinatorEntity[PPCSmgwCoordinator], SensorEntity):
             self._attr_device_class = SensorDeviceClass.ENERGY
             self._attr_state_class = SensorStateClass.TOTAL_INCREASING
 
-        # Letzte Stunde, für die wir selbst bereits einen now_hour-Punkt
-        # geschrieben haben (siehe _async_self_publish_with_gap_fill) -
-        # verhindert, dass derselbe (metadata_id, start_ts) mehrfach pro
-        # Stunde per INSERT geschrieben wird (async_import_statistics
-        # macht bei internem statistic_id offenbar KEIN Upsert, sondern
-        # einen reinen Bulk-INSERT - ein zweiter Versuch für dieselbe
-        # Stunde crasht mit UNIQUE constraint failed und reißt dabei die
-        # komplette Recorder-Batch-Transaktion um, inkl. fremder,
-        # unbeteiligter Entitäten im selben Zyklus).
-        self._last_self_published_hour = None
-
     @property
     def native_value(self) -> float | None:
         data = self.coordinator.data.get(self._key)
@@ -350,126 +330,20 @@ class PPCSmgwValueSensor(CoordinatorEntity[PPCSmgwCoordinator], SensorEntity):
         data = self.coordinator.data.get(self._key)
         return data.get("unit") if data else None
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Bei jedem Coordinator-Update (siehe CoordinatorEntity) zusätzlich
-
-        den aktuellen Wert DIREKT als Statistik-Punkt schreiben, statt sich
-        auf Home Assistants automatische state_class-basierte Kompilierung
-        von 'sum' aus 'state' zu verlassen. Grund: wiederholt beobachtet,
-        dass diese interne Kompilierung ihren Bezugspunkt verliert und
-        'sum' auf 0 zurückfällt, OBWOHL 'state' durchgehend korrekt bleibt
-        (state und sum sind bei total_increasing-Sensoren normalerweise
-        identisch, siehe unsere eigenen Statistik-Importe an anderer
-        Stelle in dieser Integration). Da wir hier die einzige QUELLE des
-        Wertes sind, ist state=sum=aktueller Wert immer korrekt (kein
-        Zähler-Reset-Fall zu berücksichtigen). Jeder Zyklus überschreibt
-        die aktuelle Stunde erneut - das korrigiert eine evtl. durch Home
-        Assistant selbst fälschlich veränderte 'sum' automatisch wieder,
-        ohne dass eine manuelle Reparatur nötig wäre. Nur für echte
-        Zähler-Messwerte (nicht Auswertungsprofile, siehe __init__).
-
-        Läuft als Task statt direkt hier: die Lücken-Prüfung (siehe
-        _async_self_publish_with_gap_fill) braucht einen async
-        Datenbank-Zugriff, _handle_coordinator_update selbst ist aber ein
-        @callback (synchron).
-        """
-        super()._handle_coordinator_update()
-        if self._is_tariff or self._attr_state_class != SensorStateClass.TOTAL_INCREASING:
-            return
-        if not self.entity_id or not self.hass:
-            return
-        value = self.native_value
-        if value is None:
-            return
-        self.hass.async_create_task(self._async_self_publish_with_gap_fill(value))
-
-    async def _async_self_publish_with_gap_fill(self, value: float) -> None:
-        """Schreibt den aktuellen Wert - UND füllt vorher automatisch eine
-
-        evtl. entstandene echte Lücke seit dem letzten Statistik-Punkt
-        (z.B. durch einen Home-Assistant-Neustart oder längeren Ausfall)
-        linear auf, statt sie stehen zu lassen. Deckt bis zu 3 Tage
-        rückwirkend ab - für längere Ausfälle bleibt ein manueller
-        CSV-Import (siehe travenetz_import.py) der richtige Weg, da dort
-        echte Messwerte statt einer reinen Schätzung genutzt werden.
-        """
-        now_hour = dt_util.utcnow().replace(minute=0, second=0, microsecond=0)
-        stats: list[StatisticData] = []
-        try:
-            lookback_start = now_hour - timedelta(days=3)
-            points = await _fetch_hourly_sum(
-                self.hass, self.entity_id, lookback_start, now_hour
-            )
-            if points:
-                last_ts, last_val = points[-1]
-                gap_slots: list = []
-                cur = last_ts + timedelta(hours=1)
-                while cur < now_hour:
-                    gap_slots.append(cur)
-                    cur += timedelta(hours=1)
-                if gap_slots:
-                    span = max(value - last_val, 0.0)  # niemals negativ interpolieren
-                    n = len(gap_slots) + 1
-                    for i, ts in enumerate(gap_slots, start=1):
-                        interpolated = round(last_val + span * (i / n), 4)
-                        stats.append(
-                            StatisticData(start=ts, state=interpolated, sum=interpolated)
-                        )
-                    _LOGGER.info(
-                        "SMGW: %d Std. Lücke bei '%s' erkannt (%s bis %s) - "
-                        "automatisch linear aufgefüllt.",
-                        len(gap_slots),
-                        self.entity_id,
-                        gap_slots[0].isoformat(),
-                        gap_slots[-1].isoformat(),
-                    )
-        except Exception:  # noqa: BLE001 - Lückenprüfung darf das normale Schreiben nicht verhindern
-            _LOGGER.exception(
-                "SMGW: Automatische Lücken-Prüfung für '%s' fehlgeschlagen - "
-                "schreibe trotzdem den aktuellen Wert.",
-                self.entity_id,
-            )
-
-        # Nur EINMAL pro Stunde selbst schreiben - siehe Kommentar zu
-        # _last_self_published_hour im Konstruktor. Echte Lücken
-        # (gap_slots oben) betreffen immer VERGANGENE, abgeschlossene
-        # Stunden und werden davon nicht eingeschränkt.
-        if self._last_self_published_hour != now_hour:
-            stats.append(StatisticData(start=now_hour, state=round(value, 4), sum=round(value, 4)))
-
-        if not stats:
-            return
-        wrote_now_hour = self._last_self_published_hour != now_hour
-        try:
-            self._self_publish_statistic(stats)
-        except Exception:  # noqa: BLE001 - darf den normalen Update-Zyklus nicht stören
-            _LOGGER.exception(
-                "SMGW: Selbst-Schreiben der Statistik für '%s' fehlgeschlagen",
-                self.entity_id,
-            )
-        finally:
-            # Stunde IMMER als "versucht" markieren, auch bei Fehlschlag -
-            # sonst würde z.B. eine vor dem Neustart bereits vorhandene
-            # Zeile für die laufende Stunde jeden weiteren Zyklus dieser
-            # Stunde erneut crashen lassen, statt nur einmal.
-            if wrote_now_hour:
-                self._last_self_published_hour = now_hour
-
-    def _self_publish_statistic(self, stats: list[StatisticData]) -> None:
-        metadata = StatisticMetaData(
-            has_mean=False,
-            mean_type=StatisticMeanType.NONE,
-            has_sum=True,
-            name=self._attr_name or self.entity_id,
-            source="recorder",
-            statistic_id=self.entity_id,
-            unit_of_measurement=self.native_unit_of_measurement or "kWh",
-            unit_class="energy",
-        )
-        # @callback, synchron - siehe history_import.py/travenetz_import.py
-        # für die ausführliche Begründung, warum hier NICHT awaitet wird.
-        async_import_statistics(self.hass, metadata, stats)
+    # WICHTIG: Kein eigener Statistik-Schreibmechanismus mehr (siehe
+    # Integrationsversion vor 1.14.0 fuer die vorherige, selbstschreibende
+    # Variante). Home Assistant kompiliert fuer state_class=TOTAL_INCREASING
+    # Sensoren die Langzeit-Statistik VOLLSTAENDIG SELBST, inklusive
+    # korrekter Reset-Erkennung (ein fallender Rohwert wird automatisch
+    # als Zaehler-Reset erkannt, 'sum' laeuft trotzdem korrekt weiter,
+    # ohne manuelles Zutun). Der fruehere Selbst-Schreib-Mechanismus war
+    # ein Workaround fuer ein Problem, das HA bereits eingebaut loest -
+    # er hat stattdessen wiederholt mit HAs eigener Kompilierung um
+    # dieselbe (metadata_id, start_ts)-Zeile kollidiert (UNIQUE constraint
+    # failed), was die komplette Recorder-Batch-Transaktion inkl. fremder,
+    # unbeteiligter Entitaeten im selben Zyklus blockiert hat. Der Sensor
+    # liefert jetzt nur noch brav seinen rohen Zaehlerstand ueber
+    # native_value - alles Weitere macht HA.
 
 
 class PPCSmgwFieldSensor(CoordinatorEntity[PPCSmgwCoordinator], SensorEntity):
