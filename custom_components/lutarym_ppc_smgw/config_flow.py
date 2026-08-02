@@ -1,4 +1,4 @@
-# Integrationsversion: 2.1.0
+# Integrationsversion: 2.4.0
 """Config Flow für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 from __future__ import annotations
@@ -9,7 +9,12 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, OptionsFlow, ConfigEntry
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import selector
@@ -91,12 +96,24 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         self._client: PPCSmgwClient | None = None
 
     async def _async_close_client(self) -> None:
-        """Schließt den aktuell offenen httpx-Client (falls vorhanden) und
+        """Meldet eine evtl. noch offene Gateway-Session sauber ab und
 
-        setzt die Referenzen zurück. Wird sowohl bei Fehlern (damit kein
-        Client offen hängen bleibt) als auch am erfolgreichen Ende des
-        Flows (nach dem letzten Request) aufgerufen.
+        schließt danach den httpx-Client. Wird sowohl bei Fehlern (damit
+        kein Client offen hängen bleibt) als auch am erfolgreichen Ende
+        des Flows (nach dem letzten Request) aufgerufen.
+
+        WICHTIG: Ohne das Logout bliebe die Session aus Sicht des Gateways
+        aktiv (siehe coordinator.py-Klassendocstring: nur eine Session
+        gleichzeitig, unzuverlässige Registersynchronisation ohne sauberes
+        Logout) - der erste reguläre Update-Zyklus direkt nach Setup/
+        Reconfigure/Options-Speichern könnte sonst noch auf die alte,
+        offene Session treffen. `logout()` schluckt selbst bereits alle
+        PPCSmgwError (siehe api.py) - ein fehlgeschlagenes Logout darf das
+        Aufräumen hier nicht verhindern.
         """
+        if self._client is not None and self._token is not None:
+            await self._client.logout(self._token)
+            self._token = None
         if self._httpx_client is not None:
             await self._httpx_client.aclose()
             self._httpx_client = None
@@ -397,10 +414,12 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         """Erlaubt das nachträgliche Ändern von Host/Benutzername/Passwort
 
         über "Neu konfigurieren" (⋮-Menü der Integration), OHNE den
-        bestehenden Config Entry zu löschen. Dadurch bleiben die
-        unique_id (Host-IP), alle Entity-IDs, der Verlauf und die
-        importierten Langzeit-Statistiken erhalten - anders als bei
-        "löschen + neu einrichten".
+        bestehenden Config Entry zu löschen. Dadurch bleiben alle
+        Entity-IDs, der Verlauf und die importierten Langzeit-Statistiken
+        erhalten (die hängen an entry_id, nicht an der unique_id) - anders
+        als bei "löschen + neu einrichten". Ändert sich dabei der Host,
+        wird die unique_id (= Host) mitgezogen, siehe Duplikat-Check
+        weiter unten.
 
         Testet die neuen Zugangsdaten genau wie async_step_credentials
         (ein Login-Versuch), bevor sie tatsächlich übernommen werden.
@@ -428,7 +447,7 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
             try:
-                await self._client.login()
+                self._token = await self._client.login()
             except PPCSmgwAuthError as err:
                 errors["base"] = "invalid_auth"
                 debug_info = html.escape(err.details)
@@ -447,6 +466,26 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 await self._async_close_client()
 
             if not errors:
+                # Host kann sich über diesen Flow ändern (siehe Docstring) -
+                # die unique_id (= Host, siehe async_step_credentials) muss
+                # deshalb hier mitgezogen werden, sonst laufen entry.data
+                # und unique_id auseinander (ein späterer echter
+                # Neueinrichtungsversuch für den ALTEN Host würde sonst
+                # fälschlich als "already_configured" blockiert). Manueller
+                # Duplikat-Check statt _abort_if_unique_id_configured(): ob
+                # dieser Helper innerhalb eines Reconfigure-Flows den
+                # eigenen, gerade bearbeiteten Entry zuverlässig ausschließt,
+                # ist nicht eindeutig - lieber explizit und nachvollziehbar.
+                if self._host != reconfigure_entry.unique_id:
+                    for other_entry in self.hass.config_entries.async_entries(DOMAIN):
+                        if (
+                            other_entry.entry_id != reconfigure_entry.entry_id
+                            and other_entry.unique_id == self._host
+                        ):
+                            return self.async_abort(reason="already_configured")
+                    self.hass.config_entries.async_update_entry(
+                        reconfigure_entry, unique_id=self._host
+                    )
                 return self.async_update_reload_and_abort(
                     reconfigure_entry,
                     data={
@@ -511,6 +550,7 @@ class PPCSmgwOptionsFlow(OptionsFlow):
             self._config_entry.data[CONF_PASSWORD],
         )
 
+        token: str | None = None
         try:
             token = await client.login()
             meters = await client.list_meters(token)
@@ -529,6 +569,12 @@ class PPCSmgwOptionsFlow(OptionsFlow):
                 for label in self._config_entry.options.get(CONF_TARIFF_IDS, [])
             ]
         finally:
+            # Siehe PPCSmgwConfigFlow._async_close_client für die Begründung,
+            # warum das Logout hier nicht fehlen darf (nur eine Gateway-
+            # Session gleichzeitig). Wird bei JEDEM Öffnen dieses Dialogs
+            # neu eingeloggt, also auch bei jedem Aufruf wieder ausgeloggt.
+            if token is not None:
+                await client.logout(token)
             await httpx_client.aclose()
 
         if user_input is not None and not errors:

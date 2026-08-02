@@ -1,4 +1,4 @@
-# Integrationsversion: 2.0.1
+# Integrationsversion: 2.4.0
 """PPC Smart Meter Gateway (iMSys) Integration für Home Assistant.
 
 Einstiegspunkt der Integration (von Home Assistant automatisch anhand des
@@ -474,8 +474,10 @@ async def _async_handle_import_history(hass: HomeAssistant, call: ServiceCall) -
     state = hass.states.get(target_entity)
     entity_entry = registry.async_get(target_entity)
     friendly_name = (
-        state.attributes.get("friendly_name") if state else None
-    ) or target_entity
+        (state.attributes.get("friendly_name") if state else None)
+        or (entity_entry.name or entity_entry.original_name if entity_entry else None)
+        or target_entity
+    )
 
     csv_path = call.data.get(ATTR_CSV_PATH)
     if csv_path:

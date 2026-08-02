@@ -1,4 +1,4 @@
-# Integrationsversion: 2.1.0
+# Integrationsversion: 2.4.0
 """Konstanten für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 # Interner, technischer Bezeichner der Integration. Wird u.a. für
@@ -32,7 +32,7 @@ HAN_PATH = "/cgi-bin/hanservice.cgi"
 # Wird im Config-Flow-Dialog und als Geräte-Softwareversion angezeigt, damit
 # man die installierte Version prüfen kann, auch bevor eine Verbindung
 # erfolgreich zustande kommt.
-VERSION = "2.1.0"
+VERSION = "2.4.0"
 
 # Service "lutarym_ppc_smgw.import_history" - einmaliger Import einer
 # korrigierten historischen Zeitreihe für den 1-0:1.8.0-Sensor

@@ -17,7 +17,7 @@ Langzeit-Statistiken direkt über Home Assistant bereit.
 - [Einrichtung](#einrichtung)
 - [Historische Daten importieren (CSV-Import)](#historische-daten-importieren-csv-import)
 - [Statistik-Reparatur über Entwicklerwerkzeuge](#statistik-reparatur-über-entwicklerwerkzeuge)
-- [Automatische Selbstheilung](#automatische-selbstheilung)
+- [Eingebauter Schutz vor Anomalien](#eingebauter-schutz-vor-anomalien)
 - [Service-Referenz](#service-referenz)
 - [Fehlerbehebung](#fehlerbehebung)
 
@@ -164,13 +164,15 @@ hohe Rampe, oder sogar negative Werte in der Statistik, **obwohl** der
 angezeigte Live-Wert der Entity die ganze Zeit korrekt war. Zwei Services
 helfen, das gezielt zu reparieren, **ohne** einen kompletten Neu-Import.
 
-> **Seit Version 1.18.0** schreibt die Integration ihre Statistik-Werte
+> **Version 1.18.0 bis 2.1.x** schrieben ihre Statistik-Werte zusätzlich
 > selbst direkt (statt sich auf Home Assistants automatische Ableitung zu
-> verlassen) - dieses Problem sollte dadurch deutlich seltener auftreten.
-> Seit Version 1.19.0 werden kurze Lücken (bis zu 3 Tage, z.B. durch
-> einen Home-Assistant-Neustart) zusätzlich automatisch aufgefüllt. Die
-> folgenden Services bleiben trotzdem verfügbar, für den Fall, dass doch
-> mal etwas repariert werden muss oder für Zeiträume vor Version 1.18.0.
+> verlassen). Das kollidierte wiederholt mit Home Assistants eigener,
+> paralleler Kompilierung derselben Stunde und wurde in **Version 2.4.0**
+> wieder entfernt - siehe Abschnitt "Eingebauter Schutz vor Anomalien"
+> unten für den aktuellen Mechanismus. Die folgenden Services bleiben
+> trotzdem verfügbar, für den Fall, dass doch mal etwas repariert werden
+> muss (z.B. für Zeiträume vor Version 1.18.0 oder nach einem längeren
+> Ausfall, der über die automatische Verbindungstoleranz hinausgeht).
 
 ### Schritt 1: Problem erkennen
 
@@ -255,22 +257,36 @@ Mit `dry_run: true` lässt sich jeder der beiden Services testweise
 ausführen, ohne dass etwas geschrieben wird - zeigt nur, was passieren
 würde.
 
-## Automatische Selbstheilung
+## Eingebauter Schutz vor Anomalien
 
-Ab Version 1.18.0/1.19.0 arbeitet die Integration proaktiv gegen die im
-vorigen Abschnitt beschriebenen Anomalien:
+Statt Statistik-Werte selbst zu schreiben (siehe Hinweis oben), verlässt
+sich die Integration seit **Version 2.4.0** bewusst auf Home Assistants
+eigene Langzeit-Statistik-Kompilierung für `state_class:
+total_increasing`-Sensoren - die erkennt einen fallenden Rohwert
+automatisch als Zähler-Reset und führt `sum` trotzdem korrekt fort, ganz
+ohne manuelles Zutun. Zwei Mechanismen sorgen dafür, dass diese
+Kompilierung erst gar keine schlechten Ausgangsdaten bekommt:
 
-- **Selbst-Schreiben** (1.18.0): bei jedem Auslesezyklus (Standard: alle
-  15 Minuten) schreibt jeder Zähler-Sensor (`state_class:
-  total_increasing`) seinen aktuellen Wert direkt als Statistik-Punkt,
-  statt sich auf Home Assistants automatische Ableitung von `sum` aus
-  `state` zu verlassen.
-- **Automatische Lückenfüllung** (1.19.0): erkennt bei jedem Zyklus, ob
-  seit dem letzten Statistik-Punkt eine echte Lücke entstanden ist (z.B.
-  durch einen Home-Assistant-Neustart), und füllt sie automatisch linear
-  auf - deckt bis zu 3 Tage rückwirkend ab. Für längere Ausfälle bleibt
-  ein CSV-Import (siehe oben) der genauere Weg, da er echte Messwerte
-  statt einer Schätzung nutzt.
+- **Verbindungstoleranz** (`coordinator.py`): bis zu drei
+  aufeinanderfolgende fehlgeschlagene Auslesezyklen (Standard-Intervall:
+  15 Minuten) führen NICHT dazu, dass die Entity als "nicht verfügbar"
+  markiert wird - der letzte bekannte Wert bleibt aktiv sichtbar. Grund:
+  eine kurzzeitig "nicht verfügbare" Entity scheint Home Assistants
+  Kompilierung als möglichen Reset zu werten und lässt `sum` auf 0
+  zurückfallen, obwohl gar keine echte Störung vorlag - erst bei einem
+  wiederholten, anhaltenden Ausfall wird die Entity wie gewohnt nicht
+  verfügbar.
+- **Plausibilitätsprüfung** (`coordinator.py`): einzelne, offensichtlich
+  unsinnige Messwerte (negativ, Rücksprung, unplausibler Sprung von mehr
+  als 20 kWh in einem Zyklus) werden verworfen, bevor sie überhaupt in
+  die Entity bzw. Statistik einfließen - der letzte bekannte plausible
+  Wert bleibt stattdessen stehen, der echte Wert wird beim nächsten
+  plausiblen Zyklus ganz normal übernommen.
+
+Für echte Lücken (z.B. durch einen längeren Ausfall oder einen
+Home-Assistant-Neustart über mehrere Stunden hinweg, also über die
+Verbindungstoleranz hinaus) bleibt ein CSV-Import (siehe oben) der
+genauere Weg, da er echte Messwerte statt einer Schätzung nutzt.
 
 ## Service-Referenz
 

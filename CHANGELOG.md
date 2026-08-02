@@ -5,6 +5,66 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 2.4.0
+
+**Kein eigener Statistik-Schreibmechanismus mehr - Home Assistant kompiliert
+jetzt vollständig selbst**
+
+- Der seit 1.18.0 aktive Selbst-Schreib-Mechanismus (`sensor.py`:
+  `_handle_coordinator_update` / `_async_self_publish_with_gap_fill` /
+  `_self_publish_statistic`) ist entfernt. Grund: er kollidierte
+  wiederholt mit Home Assistants eigener, paralleler Kompilierung
+  derselben Stunde (UNIQUE-Constraint-Fehler auf `(metadata_id,
+  start_ts)`), was die komplette Recorder-Batch-Transaktion inkl.
+  fremder, unbeteiligter Entities im selben Zyklus blockiert hat.
+- Home Assistants eingebaute Langzeit-Statistik-Kompilierung für
+  `state_class: total_increasing`-Sensoren erkennt einen fallenden
+  Rohwert selbst zuverlässig als Zähler-Reset und führt `sum` trotzdem
+  korrekt fort - der Sensor liefert jetzt nur noch seinen rohen
+  Zählerstand über `native_value`, alles Weitere macht HA.
+- Die Verbindungstoleranz (bis zu 3 aufeinanderfolgende fehlgeschlagene
+  Zyklen, siehe `coordinator.py`) und die Plausibilitätsprüfung einzelner
+  Messwerte bleiben unverändert bestehen und sind jetzt der einzige
+  Schutzmechanismus gegen Anomalien in der Statistik - siehe README,
+  Abschnitt "Eingebauter Schutz vor Anomalien" (vormals "Automatische
+  Selbstheilung").
+- Die automatische Lückenfüllung bei kurzen Ausfällen (vormals bis zu 3
+  Tage rückwirkend über `_async_self_publish_with_gap_fill`) entfällt
+  damit ebenfalls. Für echte Lücken bleibt der CSV-Import (siehe
+  `travenetz_import.py`) der genaue Weg.
+
+**Bugfixes**
+
+- `config_flow.py`: `login()` wurde an drei Stellen (Ersteinrichtung,
+  "Neu konfigurieren", Optionen-Dialog) nie mit einem `logout()`
+  abgeschlossen - im Gegensatz zu jedem regulären Coordinator-Zyklus
+  (`coordinator.py`, try/finally). Da das Gateway nur eine aktive Session
+  gleichzeitig zuverlässig verarbeitet, konnte das dazu führen, dass der
+  erste Coordinator-Refresh direkt nach Setup/Reconfigure/Options-Speichern
+  noch auf eine offene Alt-Session trifft. `_async_close_client()` meldet
+  die Session jetzt zuerst sauber ab, bevor der httpx-Client geschlossen
+  wird.
+- `config_flow.py`: "Neu konfigurieren" erlaubt das Ändern des Hosts,
+  hat die `unique_id` (= Host) danach aber nie nachgezogen - sie blieb
+  auf dem alten Host stehen, während `entry.data[CONF_HOST]` bereits den
+  neuen enthielt. Eine spätere Neueinrichtung für den alten Host wäre
+  dadurch fälschlich als "already_configured" blockiert worden. Zieht die
+  `unique_id` jetzt bei einer Host-Änderung nach (mit explizitem
+  Duplikat-Check gegen andere bestehende Einträge, bricht in dem Fall mit
+  "already_configured" ab statt eines der beiden Einträge zu verbiegen).
+- `__init__.py`: der Service-Handler für `import_history` hat den
+  Anzeigenamen bei fehlendem `friendly_name`-Attribut direkt auf die
+  rohe entity_id zurückfallen lassen, statt (wie die drei anderen
+  Service-Handler) zuerst den Namen aus der Entity Registry zu
+  probieren.
+- `config_flow.py`: `ConfigFlowResult` wurde als Rückgabetyp verwendet,
+  aber nie importiert (nur durch `from __future__ import annotations`
+  zur Laufzeit unschädlich geblieben).
+- `hacs.json`: deklariertes Mindest-HA von 2024.1.0 auf 2024.11.0
+  angehoben - `_get_reconfigure_entry()`/`async_update_reload_and_abort()`
+  (Reconfigure-Flow, seit 2.1.0) gibt es erst ab den im Herbst 2024
+  eingeführten Reauth/Reconfigure-Hilfsmethoden.
+
 ## 2.1.0
 
 **Neu: "Neu konfigurieren" - Host/Benutzername/Passwort ändern ohne die
