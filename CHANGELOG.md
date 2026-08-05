@@ -5,6 +5,34 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 2.4.6
+
+**Import-Statistik: sum-Werte schließen jetzt nahtlos an die Live-Kette an
+(kein -Zählerstand-Sprung mehr in change-Karten)**
+
+- Problem: Die Statistik-Karte (`type: statistic`, `stat_type: change`)
+  zeigte für den laufenden Monat einen riesigen negativen Wert (z.B.
+  -4854 kWh), obwohl der reale Verbrauch nur ~0,5 kWh betrug. Ursache: Der
+  Import schrieb `sum` als absoluten Zählerstand, während Home Assistant
+  die Live-Statistik eines `total_increasing`-Sensors mit `sum` = 0 ab
+  dessen erstem Zustand kompiliert. Beide sum-Ketten hatten damit
+  unterschiedliche Nullpunkte; die `change`-Berechnung über die
+  Monatsgrenze griff über diesen Bruch und ergab -(Zählerstand).
+- Fix: Der Import schreibt `state` weiterhin als absoluten Zählerstand
+  (korrekte Anzeige, korrekte Reset-Erkennung), aber `sum` jetzt so, dass
+  die LETZTE importierte Zeile bei 0 endet und alle früheren entsprechend
+  negativ sind. Dadurch schließt die importierte Reihe nahtlos an die bei
+  0 startende Live-Kette an - der Übergang ist sprungfrei. (Dasselbe
+  Prinzip nutzen etablierte Statistik-Import-Werkzeuge.)
+- Nachgerechnet gegen einen echten Jahres-Export: `change` je Monat ergibt
+  jetzt exakt den realen Monatsverbrauch (Aug +0,59; Jul +5,21; Feb
+  +1713,63 kWh), die letzte importierte sum ist 0, und der state-Verlauf
+  bleibt streng monoton steigend.
+- Aufräumung: Die überholte "Brücke bis jetzt" (lineare Interpolation vom
+  CSV-Ende zum Live-Wert) wurde entfernt - im Rückwärts-Modus ist der
+  Live-Wert bereits der Anker auf der letzten CSV-Zeile, es gibt nichts zu
+  überbrücken.
+
 ## 2.4.5
 
 **Statistik-Einbruch nach Import verhindert (Ausreißer nahe 0 wird jetzt

@@ -1,4 +1,4 @@
-# Integrationsversion: 2.4.5
+# Integrationsversion: 2.4.6
 """1:1-Import einer TraveNetz/iMSys-CSV-Exportdatei (stündliche
 
 "Energie bezogen"-Werte) in die Langzeit-Statistik dieser Integration.
@@ -258,15 +258,29 @@ async def import_csv_history(
                 "wählen oder den Zählerstand prüfen."
             )
         cumulative = anchor_end_value_kwh
+        # sum-Anschluss an die Live-Kette: Home Assistant kompiliert die
+        # Live-Statistik mit sum=0 ab dem ersten Zustand des Sensors
+        # (~aktueller Zählerstand). Damit die importierte Reihe NAHTLOS
+        # anschließt (kein Sprung in stat_type=change-Karten), muss die
+        # LETZTE importierte Zeile sum=0 tragen und alle früheren
+        # entsprechend NEGATIV sein (sum = -(Energie von dieser Zeile bis
+        # zum Reihenende)). state bleibt weiterhin der absolute
+        # Zählerstand. Belegt/nachgerechnet: change je Monat ergibt dann
+        # exakt den realen Monatsverbrauch, und der Übergang Import->Live
+        # ist sprungfrei.
+        energy_from_here_to_end = 0.0
         stats_reversed: list[StatisticData] = []
         for ts in reversed(timestamps):
             stats_reversed.append(
                 StatisticData(
-                    start=ts, state=round(cumulative, 4), sum=round(cumulative, 4)
+                    start=ts,
+                    state=round(cumulative, 4),
+                    sum=round(-energy_from_here_to_end, 4),
                 )
             )
             key = f"{ts.year:04d}-{ts.month:02d}"
             month_summary[key] = month_summary.get(key, 0.0) + filled[ts]
+            energy_from_here_to_end += filled[ts]
             # Für die VORHERIGE (ältere) Zeile den Zuwachs dieser Zeile
             # abziehen.
             cumulative -= filled[ts]
@@ -277,93 +291,38 @@ async def import_csv_history(
         # Standes AN der ersten Zeile ist computed_start_value.
         cumulative_final = anchor_end_value_kwh
     else:
-        # VORWÄRTS (unverändertes bisheriges Verhalten).
+        # VORWÄRTS (Fallback ohne Live-Anker). Auch hier sum so, dass die
+        # LETZTE Zeile bei 0 endet und frühere negativ sind - damit ein
+        # späterer erster Live-Poll (sum startet bei 0) nahtlos anschließt.
+        # Dafür wird zuerst die Gesamtenergie bestimmt, dann vorwärts
+        # kumuliert und um die Gesamtsumme versetzt (cum_forward - total).
+        total_forward = sum(filled.values())
         cumulative = start_value_kwh
+        running = 0.0
         for ts in timestamps:
             delta = filled[ts]
             cumulative += delta
+            running += delta
             stats.append(
-                StatisticData(start=ts, state=round(cumulative, 4), sum=round(cumulative, 4))
+                StatisticData(
+                    start=ts,
+                    state=round(cumulative, 4),
+                    sum=round(running - total_forward, 4),
+                )
             )
             key = f"{ts.year:04d}-{ts.month:02d}"
             month_summary[key] = month_summary.get(key, 0.0) + delta
         computed_start_value = start_value_kwh
         cumulative_final = cumulative
 
+    # Hinweis: Die frühere "Brücke bis jetzt" (lineare Interpolation vom
+    # CSV-Ende zum aktuellen Live-Wert) wurde entfernt. Im Rückwärts-Modus
+    # (Standard) ist der Live-Wert bereits der Anker auf der letzten
+    # CSV-Zeile - es gibt nichts zu überbrücken. Der Parameter
+    # extend_to_now_value_kwh wird nur noch aus Kompatibilität akzeptiert,
+    # aber nicht mehr ausgewertet.
     bridged_hours = 0
     bridge_skipped_reason: str | None = None
-    if extend_to_now_value_kwh is not None and anchor_end_value_kwh is None:
-        last_ts = timestamps[-1]
-        now_hour = datetime.now(tz=last_ts.tzinfo).replace(minute=0, second=0, microsecond=0)
-        bridge_slots = []
-        cur = last_ts + timedelta(hours=1)
-        while cur <= now_hour:
-            bridge_slots.append(cur)
-            cur += timedelta(hours=1)
-        if bridge_slots:
-            base = cumulative  # CSV-Endstand, bevor die Brücke beginnt
-            span = extend_to_now_value_kwh - base
-            n = len(bridge_slots)
-            implied_hourly_rate = span / n
-
-            # Plausibilitätsprüfung: der aktuelle Live-Wert ist ein EINZELNER
-            # Schnappschuss vom HAN-Interface - bei einem Auslesefehler/
-            # Glitch würde er blind einen falschen Sprung (oder Einbruch!)
-            # festschreiben. Drei Fälle werden unterschieden:
-            #  a) span nur LEICHT negativ (< 1 kWh): typisches Mess-Rauschen
-            #     beim Reconnect nach einer Verbindungsstörung, kein echter
-            #     Reset - wird auf 0 geklemmt (flache Fortsetzung) statt
-            #     die ganze Brücke zu verwerfen.
-            #  b) span DEUTLICH negativ (>= 1 kWh): für einen
-            #     total_increasing-Zähler nicht plausibel, wird blockiert.
-            #  c) span positiv, aber unrealistisch hoch (siehe unten).
-            NEGATIVE_NOISE_TOLERANCE_KWH = 1.0
-            real_hourly_values = list(filled.values())
-            max_real_hourly = max(real_hourly_values) if real_hourly_values else 0.0
-            suspicious_threshold = max(max_real_hourly * 5, 15.0)
-
-            if -NEGATIVE_NOISE_TOLERANCE_KWH <= span < 0:
-                _LOGGER.info(
-                    "SMGW Historien-Import: aktueller Wert liegt %.3f kWh unter dem "
-                    "CSV-Endstand - im Toleranzbereich für Mess-Rauschen, Brücke "
-                    "wird flach (ohne Rückgang) fortgesetzt statt verworfen.",
-                    -span,
-                )
-                span = 0.0
-                implied_hourly_rate = 0.0
-
-            if span < 0:
-                bridge_skipped_reason = (
-                    f"Aktueller Wert ({extend_to_now_value_kwh:.2f} kWh) liegt UNTER "
-                    f"dem CSV-Endstand ({base:.2f} kWh) - ein Zählerstand kann nicht "
-                    "sinken. Wahrscheinlich ein fehlerhafter Einzel-Messwert vom "
-                    "HAN-Interface (oder eine falsche/verwaiste Entity abgefragt), "
-                    "keine Brücke geschrieben - bitte den aktuellen Wert manuell prüfen."
-                )
-                _LOGGER.warning("SMGW Historien-Import: %s", bridge_skipped_reason)
-            elif implied_hourly_rate > suspicious_threshold:
-                bridge_skipped_reason = (
-                    f"Sprung zu 'jetzt' wäre {implied_hourly_rate:.1f} kWh/Stunde "
-                    f"({span:.1f} kWh über {n} Std.) - das ist deutlich mehr als die "
-                    f"höchste je in der CSV gesehene Stundenrate "
-                    f"({max_real_hourly:.2f} kWh/h) bzw. der Sicherheits-Schwellwert "
-                    f"({suspicious_threshold:.1f} kWh/h). Wahrscheinlich ein "
-                    "fehlerhafter Einzel-Messwert vom HAN-Interface, keine echte "
-                    "Brücke geschrieben - bitte den aktuellen Wert manuell prüfen."
-                )
-                _LOGGER.warning("SMGW Historien-Import: %s", bridge_skipped_reason)
-            else:
-                for i, ts in enumerate(bridge_slots, start=1):
-                    cumulative = base + span * (i / n)
-                    stats.append(
-                        StatisticData(
-                            start=ts, state=round(cumulative, 4), sum=round(cumulative, 4)
-                        )
-                    )
-                    key = f"{ts.year:04d}-{ts.month:02d}"
-                    month_summary[key] = month_summary.get(key, 0.0) + (span / n)
-                bridged_hours = n
-                timestamps.append(bridge_slots[-1])
 
     summary = {
         "hourly_points": len(stats),
