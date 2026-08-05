@@ -62,12 +62,10 @@
   "options": {
     "step": {
       "init": {
-        "title": "Adjust meters, profiles and polling",
-        "description": "Choose which meters to read and how often the gateway should be polled. Evaluation profiles are optional – leaving them off keeps each polling cycle short, which reduces load on the gateway.",
+        "title": "Adjust meter/profile selection",
         "data": {
           "meter_ids": "Meters",
-          "fetch_tariff_profiles": "Also fetch evaluation profiles",
-          "tariff_ids": "Evaluation profiles (only used when enabled above)",
+          "tariff_ids": "Evaluation profiles",
           "scan_interval": "Polling interval"
         }
       }

@@ -1,4 +1,4 @@
-# Integrationsversion: 2.4.1
+# Integrationsversion: 2.4.2
 """PPC Smart Meter Gateway (iMSys) Integration für Home Assistant.
 
 Einstiegspunkt der Integration (von Home Assistant automatisch anhand des
@@ -37,10 +37,9 @@ from .const import (
     ATTR_START_DATE,
     ATTR_START_VALUE,
     ATTR_TARGET_ENTITY,
-    CONF_FETCH_TARIFF_PROFILES,
     CONF_METER_IDS,
-    CONF_SCAN_INTERVAL,
     CONF_TARIFF_IDS,
+    CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
     SERVICE_IMPORT_HISTORY,
@@ -177,20 +176,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # leeren Liste (explizit nichts) unterschieden wird.
     meter_ids = entry.options.get(CONF_METER_IDS)
     tariff_ids = entry.options.get(CONF_TARIFF_IDS)
-    # Nutzerkonfigurierbares Poll-Intervall (Options-Flow) - fällt auf den
-    # bisherigen festen Wert zurück, falls noch nicht gesetzt (z.B. bei
-    # Entries von vor Version 2.2.0).
+    # Nutzerkonfigurierbares Poll-Intervall (Options-Flow); fällt auf den
+    # bisherigen festen Wert zurück, falls noch nicht gesetzt.
     scan_interval_seconds = entry.options.get(
         CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS
     )
-    fetch_tariff_profiles = entry.options.get(CONF_FETCH_TARIFF_PROFILES, False)
     coordinator = PPCSmgwCoordinator(
         hass,
         client,
         meter_ids,
         tariff_ids,
         timedelta(seconds=scan_interval_seconds),
-        fetch_tariff_profiles=fetch_tariff_profiles,
     )
     # Erster Abruf synchron beim Setup - schlägt er fehl, bricht das
     # Setup des Config Entry mit einer aussagekräftigen Fehlermeldung ab,
@@ -484,8 +480,10 @@ async def _async_handle_import_history(hass: HomeAssistant, call: ServiceCall) -
     state = hass.states.get(target_entity)
     entity_entry = registry.async_get(target_entity)
     friendly_name = (
-        state.attributes.get("friendly_name") if state else None
-    ) or target_entity
+        (state.attributes.get("friendly_name") if state else None)
+        or (entity_entry.name or entity_entry.original_name if entity_entry else None)
+        or target_entity
+    )
 
     csv_path = call.data.get(ATTR_CSV_PATH)
     if csv_path:

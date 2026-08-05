@@ -5,74 +5,93 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
-## 2.4.1
+## 2.4.2
+
+_(Version 2.4.1 wurde übersprungen - deren Umfang ist vollständig in diesem Release enthalten.)_
+
+**Einstellbares Abrufintervall + Standard-IP + Sichtbarkeit statt Filterung**
 
 - Standard-IP im Einrichtungsassistenten von `192.168.1.200` auf
-  `172.20.0.1` geändert - das ist die typische Adresse der HAN-Schnittstelle
-  eines PPC/TraveNetz-Gateways, sodass das Feld im Normalfall nur noch
-  bestätigt statt geändert werden muss.
-- (Das einstellbare Abrufintervall aus 2.2.0 bleibt unverändert im
-  Options-Flow verfügbar: ⋮ → Konfigurieren, Wert in Minuten, Minimum 5.)
+  `172.20.0.1` geändert - typische Adresse der HAN-Schnittstelle eines
+  PPC/TraveNetz-Gateways, sodass das Feld im Normalfall nur bestätigt
+  statt geändert werden muss.
+- Abrufintervall im Optionen-Dialog frei einstellbar (Minuten, Minimum 5,
+  Standard 15) statt fest verdrahteter 900 Sekunden.
+- Alle vom Gateway gelieferten Messwerte und Auswertungsprofile werden
+  wieder vollständig abgerufen - nichts wird mehr im Coordinator
+  weggefiltert. Welche Entitäten in Home Assistant standardmäßig sichtbar
+  sind, steuert jetzt ausschließlich `entity_registry_enabled_default`
+  in `sensor.py`:
+    - Standardmäßig AKTIV: Zähler-Messwerte (u.a. 1-0:1.8.0 Bezug,
+      1-0:2.8.0 Einspeisung), Firmware und "Zähleradresse" (Zählernummer).
+    - Standardmäßig DEAKTIVIERT, aber vorhanden und jederzeit unter
+      Einstellungen -> Geräte & Dienste -> Entitäten aktivierbar: alle
+      übrigen Zähler-Metadaten, sämtliche Auswertungsprofile sowie
+      Integrations-Version, IP-Adresse, Benutzername, OBIS-Aktiv-Status
+      und Zugang-gültig-ab.
+- 1-0:2.8.0 (Einspeisung) bleibt dadurch ein vollwertiger Sensor, selbst
+  wenn das Gateway aktuell keinen Wert dafür liefert - die Entität bleibt
+  bestehen und zeigt einen Wert an, sobald einer kommt.
 
-## 2.2.0
+## 2.4.0
 
-**Deutlich weniger Last auf dem Gateway: halbierte Request-Zahl,
-konfigurierbares Abrufintervall, gezielte Datenauswahl**
+**Kein eigener Statistik-Schreibmechanismus mehr - Home Assistant kompiliert
+jetzt vollständig selbst**
 
-Hintergrund: Nach wiederholten Aussetzern der HAN-Schnittstelle
-("Server disconnected without sending a response", teils über Stunden)
-wurde die Integration gegen die offizielle Spezifikation geprüft
-([BSI TR-03109-1], Detailspezifikationen Kapitel 6 "RESTful Webservice"
-und Kapitel 7 "Authentifizierung mittels Kennung und Passwort"). Die
-Auth-Umsetzung ist spezifikationskonform, dabei fiel aber auf, dass die
-tatsächliche Anzahl HTTP-Requests pro Abrufzyklus doppelt so hoch war wie
-nötig. Das Gateway ist ein ressourcenarmes Embedded-System, das nur eine
-aktive Session gleichzeitig erlaubt - die folgenden Änderungen senken die
-Last deutlich.
+- Der seit 1.18.0 aktive Selbst-Schreib-Mechanismus (`sensor.py`:
+  `_handle_coordinator_update` / `_async_self_publish_with_gap_fill` /
+  `_self_publish_statistic`) ist entfernt. Grund: er kollidierte
+  wiederholt mit Home Assistants eigener, paralleler Kompilierung
+  derselben Stunde (UNIQUE-Constraint-Fehler auf `(metadata_id,
+  start_ts)`), was die komplette Recorder-Batch-Transaktion inkl.
+  fremder, unbeteiligter Entities im selben Zyklus blockiert hat.
+- Home Assistants eingebaute Langzeit-Statistik-Kompilierung für
+  `state_class: total_increasing`-Sensoren erkennt einen fallenden
+  Rohwert selbst zuverlässig als Zähler-Reset und führt `sum` trotzdem
+  korrekt fort - der Sensor liefert jetzt nur noch seinen rohen
+  Zählerstand über `native_value`, alles Weitere macht HA.
+- Die Verbindungstoleranz (bis zu 3 aufeinanderfolgende fehlgeschlagene
+  Zyklen, siehe `coordinator.py`) und die Plausibilitätsprüfung einzelner
+  Messwerte bleiben unverändert bestehen und sind jetzt der einzige
+  Schutzmechanismus gegen Anomalien in der Statistik - siehe README,
+  Abschnitt "Eingebauter Schutz vor Anomalien" (vormals "Automatische
+  Selbstheilung").
+- Die automatische Lückenfüllung bei kurzen Ausfällen (vormals bis zu 3
+  Tage rückwirkend über `_async_self_publish_with_gap_fill`) entfällt
+  damit ebenfalls. Für echte Lücken bleibt der CSV-Import (siehe
+  `travenetz_import.py`) der genaue Weg.
 
-- **Digest-Auth jetzt preemptiv statt mit 401-Roundtrip pro Request.**
-  Bisher über `httpx.DigestAuth`, das für JEDEN einzelnen Request erneut
-  den vollen Challenge-Handshake aushandelt (erst unauthentifiziert
-  anfragen, 401 mit `WWW-Authenticate` empfangen, dann erneut mit
-  berechnetem Header) - obwohl Realm/Nonce/Qop innerhalb EINER Session
-  unverändert bleiben und laut [RFC7616] Abschnitt 3.4 wiederverwendet
-  werden dürfen. Jetzt eigene Challenge-Verwaltung
-  (`_DigestChallenge`/`_build_authorization_header` in `api.py`): EIN
-  401-Roundtrip zu Beginn des Zyklus, danach wird der
-  `Authorization`-Header für alle Folge-Requests direkt mitgeschickt
-  (Nonce-Counter `nc` wird korrekt hochgezählt, frischer Client-Nonce pro
-  Request, MD5 und SHA-256 unterstützt - weiterhin voll RFC7616-konform).
-  Läuft die serverseitige Nonce ab, wird die neue Challenge automatisch
-  übernommen und der Request einmalig wiederholt.
-  Messbar in einem simulierten Zyklus (Login + 5 Folge-Requests):
-  **7 statt 12 HTTP-Requests, 1 statt 6 401-Roundtrips.**
-- **Abrufintervall jetzt einstellbar** (Options-Flow, Standard unverändert
-  15 Minuten, Minimum 5 Minuten). Bisher fest auf 900 Sekunden verdrahtet.
-- **Nur noch die relevanten Messwerte werden übernommen:** 1-0:1.8.0
-  (Bezug) und 1-0:2.8.0 (Einspeisung), siehe `ONLY_TRACKED_OBIS_CODES` in
-  `const.py`. Andere, vom Gateway ggf. zusätzlich gelieferte OBIS-Zeilen
-  werden verworfen.
-- **Auswertungsprofile sind jetzt optional und standardmäßig AUS.** Sie
-  verursachten pro Zyklus einen zusätzlichen `list_tariff_profiles`-Aufruf
-  plus einen `get_tariff_profile_value`-Aufruf JE Profil - für die reine
-  Bezug/Einspeisung-Auswertung nicht nötig. Über den Options-Flow
-  ("Auswertungsprofile zusätzlich abrufen") jederzeit aktivierbar; ist die
-  Option aus, wird der komplette Profil-Abschnitt des Zyklus übersprungen.
-- **Selten benötigte Entitäten werden standardmäßig deaktiviert angelegt.**
-  Standardmäßig aktiv bleiben nur: Firmware-Version, die
-  1-0:1.8.0/1-0:2.8.0-Wertesensoren und "Zähleradresse" (Zählernummer).
-  Alle übrigen (Integrations-Version, IP-Adresse, Benutzername,
-  OBIS-Aktiv-Status, Zugang-gültig-ab, weitere Zähler-Metadaten wie
-  Kommunikationstyp/Protokoll-Typ/Ausleseintervall sowie sämtliche
-  Auswertungsprofil-Entitäten) existieren weiterhin, sind aber
-  ausgeblendet und bei Bedarf jederzeit unter Einstellungen → Geräte &
-  Dienste → Entitäten aktivierbar - ohne Neueinrichtung.
-- Hinweis zu bestehenden Installationen: Die neuen Optionen greifen mit
-  ihren Standardwerten sofort, ohne dass etwas neu eingerichtet werden
-  muss. Bereits vorhandene, jetzt standardmäßig deaktivierte Entitäten
-  bleiben bestehen (Home Assistant deaktiviert bereits registrierte
-  Entitäten nicht nachträglich) - nur bei Neuinstallationen werden sie von
-  vornherein ausgeblendet.
+**Bugfixes**
+
+- `config_flow.py`: `login()` wurde an drei Stellen (Ersteinrichtung,
+  "Neu konfigurieren", Optionen-Dialog) nie mit einem `logout()`
+  abgeschlossen - im Gegensatz zu jedem regulären Coordinator-Zyklus
+  (`coordinator.py`, try/finally). Da das Gateway nur eine aktive Session
+  gleichzeitig zuverlässig verarbeitet, konnte das dazu führen, dass der
+  erste Coordinator-Refresh direkt nach Setup/Reconfigure/Options-Speichern
+  noch auf eine offene Alt-Session trifft. `_async_close_client()` meldet
+  die Session jetzt zuerst sauber ab, bevor der httpx-Client geschlossen
+  wird.
+- `config_flow.py`: "Neu konfigurieren" erlaubt das Ändern des Hosts,
+  hat die `unique_id` (= Host) danach aber nie nachgezogen - sie blieb
+  auf dem alten Host stehen, während `entry.data[CONF_HOST]` bereits den
+  neuen enthielt. Eine spätere Neueinrichtung für den alten Host wäre
+  dadurch fälschlich als "already_configured" blockiert worden. Zieht die
+  `unique_id` jetzt bei einer Host-Änderung nach (mit explizitem
+  Duplikat-Check gegen andere bestehende Einträge, bricht in dem Fall mit
+  "already_configured" ab statt eines der beiden Einträge zu verbiegen).
+- `__init__.py`: der Service-Handler für `import_history` hat den
+  Anzeigenamen bei fehlendem `friendly_name`-Attribut direkt auf die
+  rohe entity_id zurückfallen lassen, statt (wie die drei anderen
+  Service-Handler) zuerst den Namen aus der Entity Registry zu
+  probieren.
+- `config_flow.py`: `ConfigFlowResult` wurde als Rückgabetyp verwendet,
+  aber nie importiert (nur durch `from __future__ import annotations`
+  zur Laufzeit unschädlich geblieben).
+- `hacs.json`: deklariertes Mindest-HA von 2024.1.0 auf 2024.11.0
+  angehoben - `_get_reconfigure_entry()`/`async_update_reload_and_abort()`
+  (Reconfigure-Flow, seit 2.1.0) gibt es erst ab den im Herbst 2024
+  eingeführten Reauth/Reconfigure-Hilfsmethoden.
 
 ## 2.1.0
 
