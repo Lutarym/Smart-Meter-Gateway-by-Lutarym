@@ -1,4 +1,4 @@
-# Integrationsversion: 2.4.4
+# Integrationsversion: 2.4.5
 """PPC Smart Meter Gateway (iMSys) Integration für Home Assistant.
 
 Einstiegspunkt der Integration (von Home Assistant automatisch anhand des
@@ -187,6 +187,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         meter_ids,
         tariff_ids,
         timedelta(seconds=scan_interval_seconds),
+        entry=entry,
     )
     # Erster Abruf synchron beim Setup - schlägt er fehl, bricht das
     # Setup des Config Entry mit einer aussagekräftigen Fehlermeldung ab,
@@ -334,6 +335,13 @@ async def _async_process_pending_history_import(
                 breakdown = ", ".join(
                     f"{k}: {v:.1f} kWh" for k, v in summary["monthly_breakdown_kwh"].items()
                 )
+                # Plausibilitäts-Referenz für den nächsten Live-Poll setzen
+                # (verhindert, dass ein Ausreißer nahe 0 die gerade
+                # importierte Statistik als vermeintlichen Zähler-Reset
+                # zerstört - siehe coordinator.seed_last_good_value).
+                seed_val = summary.get("final_computed_kwh")
+                if seed_val is not None:
+                    coordinator.seed_last_good_value(target_entity, float(seed_val))
                 if summary.get("mode") == "backward_from_anchor":
                     bridge_note = (
                         f" (rückwärts gerechnet ab Live-Anker "
@@ -545,6 +553,15 @@ async def _async_handle_import_history(hass: HomeAssistant, call: ServiceCall) -
                 dry_run=call.data[ATTR_DRY_RUN],
             )
         summary["target_entity"] = target_entity
+        # Plausibilitäts-Referenz nach echtem (nicht dry-run) Import setzen.
+        if (
+            not call.data[ATTR_DRY_RUN]
+            and coordinator is not None
+            and summary.get("final_computed_kwh") is not None
+        ):
+            coordinator.seed_last_good_value(
+                target_entity, float(summary["final_computed_kwh"])
+            )
         return summary
 
     if not call.data.get(ATTR_START_DATE) or not call.data.get(ATTR_SOURCE_ENTITY):

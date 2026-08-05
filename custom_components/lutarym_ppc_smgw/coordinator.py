@@ -1,4 +1,4 @@
-# Integrationsversion: 2.4.4
+# Integrationsversion: 2.4.5
 """DataUpdateCoordinator für das PPC Smart Meter Gateway.
 
 Ein Update-Zyklus (_async_update_data) entspricht genau einem
@@ -115,9 +115,11 @@ class PPCSmgwCoordinator(DataUpdateCoordinator[dict[str, dict]]):
         meter_labels: list[str] | None,
         tariff_labels: list[str] | None,
         update_interval: timedelta,
+        entry: ConfigEntry | None = None,
     ) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=update_interval)
         self.client = client
+        self.entry = entry  # für Entity-Auflösung (Restore von last_good nach Neustart)
         self.meter_labels = meter_labels  # None = alle am Gateway gefundenen Zähler
         self.tariff_labels = tariff_labels  # None = alle gefundenen Auswertungsprofile
         self.available_meters: list[dict[str, str]] = []
@@ -260,6 +262,71 @@ class PPCSmgwCoordinator(DataUpdateCoordinator[dict[str, dict]]):
             if token:
                 await self.client.logout(token)
 
+    def seed_last_good_value(self, target_entity_id: str, value_kwh: float) -> None:
+        """Setzt den Plausibilitäts-Referenzwert (last_good) für den Zähler,
+
+        der zu `target_entity_id` gehört, direkt auf `value_kwh`. Wird nach
+        einem Historien-Import aufgerufen: Der importierte Endstand ist der
+        verlässlichste bekannte Wert, und ohne dieses Seeding wäre der
+        Coordinator beim ersten Live-Poll nach dem Import ohne Referenz -
+        ein einzelner Ausreißer nahe 0 würde dann ungeprüft übernommen und
+        von Home Assistant (total_increasing) als Zähler-Reset gewertet,
+        was die gerade importierte Statistik zerstört.
+        """
+        if self.entry is None or value_kwh < 0:
+            return
+        try:
+            from homeassistant.helpers import entity_registry as er
+
+            registry = er.async_get(self.hass)
+            for key in list(self.data.keys() if self.data else []):
+                if METER_OBIS_SEPARATOR not in key:
+                    continue
+                unique_id = f"{self.entry.entry_id}_{key}"
+                eid = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+                if eid == target_entity_id:
+                    self._last_good_meter_values[key] = value_kwh
+                    _LOGGER.debug(
+                        "SMGW: Plausibilitäts-Referenz für '%s' nach Import "
+                        "auf %.3f kWh gesetzt.",
+                        key,
+                        value_kwh,
+                    )
+                    return
+        except (AttributeError, TypeError):
+            return
+
+    def _restore_last_good_from_state(self, key: str) -> float | None:
+        """Rekonstruiert den letzten plausiblen Zählerstand für `key` aus
+
+        dem von Home Assistant über Neustarts hinweg erhaltenen letzten
+        Zustand der zugehörigen Sensor-Entity. Wird nur genutzt, wenn im
+        laufenden Prozess noch kein Referenzwert vorliegt (erster Poll nach
+        Start / Neu-Einrichtung), damit die Plausibilitätsprüfung nicht
+        blind ist. Gibt None zurück, wenn sich kein brauchbarer Vorwert
+        finden lässt (dann bleibt es beim bisherigen "erster Zyklus"-
+        Verhalten).
+        """
+        if self.entry is None:
+            return None
+        try:
+            from homeassistant.helpers import entity_registry as er
+
+            registry = er.async_get(self.hass)
+            unique_id = f"{self.entry.entry_id}_{key}"
+            entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+            if entity_id is None:
+                return None
+            state = self.hass.states.get(entity_id)
+            if state is None or state.state in (None, "unknown", "unavailable"):
+                return None
+            value = float(str(state.state).replace(",", "."))
+            if value < 0:
+                return None
+            return value
+        except (ValueError, TypeError, AttributeError):
+            return None
+
     def _validate_meter_reading(self, key: str, reading: dict) -> dict:
         """Plausibilitätsprüfung EINES Zähler-Messwerts (state_class
 
@@ -288,6 +355,23 @@ class PPCSmgwCoordinator(DataUpdateCoordinator[dict[str, dict]]):
             return reading  # keine Zahl - Sensor-Entity behandelt das selbst (native_value gibt None)
 
         last_good = self._last_good_meter_values.get(key)
+        if last_good is None:
+            # WICHTIG (Schutz direkt nach Neustart / Löschen+Neu-Hinzufügen):
+            # _last_good_meter_values ist im RAM und nach einem Neustart
+            # bzw. Neu-Einrichten leer. Ohne Referenz würde der erste Poll
+            # JEDEN Wert ungeprüft übernehmen - auch einen Ausreißer nahe 0.
+            # Da der Sensor total_increasing ist, interpretiert Home
+            # Assistant so einen Sturz als Zähler-Reset und zerstört die
+            # aufgebaute Langzeit-Statistik (Sprung ins Negative). Deshalb
+            # wird der letzte bekannte Referenzwert hier aus dem von HA über
+            # Neustarts hinweg wiederhergestellten letzten Sensorzustand
+            # rekonstruiert, damit die Plausibilitätsprüfung schon beim
+            # allerersten Poll greift.
+            restored = self._restore_last_good_from_state(key)
+            if restored is not None:
+                last_good = restored
+                self._last_good_meter_values[key] = restored
+
         implausible_reason: str | None = None
         if value < 0:
             implausible_reason = "negativer Wert"

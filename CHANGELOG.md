@@ -5,6 +5,36 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 2.4.5
+
+**Statistik-Einbruch nach Import verhindert (Ausreißer nahe 0 wird jetzt
+auch beim ersten Poll abgefangen)**
+
+- Problem: Nach einem CSV-Import (oder generell nach Löschen+Neu-Hinzufügen
+  bzw. einem Neustart) war die bestehende Plausibilitätsprüfung für den
+  ERSTEN Live-Poll blind, weil ihr Referenzwert (`_last_good_meter_values`)
+  nur im Arbeitsspeicher liegt und dann leer ist. Traf in genau diesem
+  Fenster ein einzelner fehlerhafter Messwert nahe 0 ein, wurde er
+  ungeprüft übernommen. Da der Zähler-Sensor `total_increasing` ist,
+  wertete Home Assistant den Sturz auf 0 als Zähler-Reset und riss die
+  Monatssumme ins Negative (z.B. auf -4854 kWh), obwohl die Entity nur
+  kurz einbrach und sofort wieder korrekt war.
+- Fix 1 - Seeding nach Import: Nach einem erfolgreichen Historien-Import
+  wird der importierte Endstand direkt als Plausibilitäts-Referenz im
+  Coordinator gesetzt (`seed_last_good_value`). Der unmittelbar folgende
+  erste Live-Poll wird dadurch geprüft; ein Ausreißer nahe 0 wird
+  verworfen und der letzte gute Wert beibehalten, statt die gerade
+  importierte Statistik zu zerstören.
+- Fix 2 - Referenz aus letztem Zustand: Liegt (etwa nach einem reinen
+  Neustart ohne Import) kein Referenzwert im Speicher vor, wird er aus dem
+  von Home Assistant über Neustarts hinweg erhaltenen letzten
+  Sensorzustand rekonstruiert (`_restore_last_good_from_state`), bevor der
+  erste Poll ausgewertet wird.
+- Beide Wege sind allgemein und nicht fallspezifisch: Sie schützen jeden
+  Nutzer vor genau diesem Reset-Artefakt, unabhängig von konkreten
+  Zählerständen. Der Coordinator erhält dafür jetzt eine Referenz auf den
+  Config-Entry (Entity-Auflösung).
+
 ## 2.4.4
 
 **CSV-Import: korrekte kW→kWh-Umrechnung, takt-unabhängig, Text korrigiert**
