@@ -1,4 +1,4 @@
-# Integrationsversion: 2.4.7
+# Integrationsversion: 2.5.0
 """Config Flow für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 from __future__ import annotations
@@ -86,6 +86,10 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         self._tariff_profiles: list[dict[str, str]] = []
         self._selected_meter_ids: list[str] = []
         self._selected_tariff_ids: list[str] = []
+        # Fortschritts-/Statuszeilen für die zweisprachige Häkchen-Liste,
+        # die zwischen den Einrichtungsschritten angezeigt wird (siehe
+        # _status_block). Jeder Eintrag: (de, en).
+        self._status_lines: list[tuple[str, str]] = []
         # WICHTIG: Dieselbe httpx-Client-/PPCSmgwClient-Instanz wird über
         # ALLE Einrichtungsschritte hinweg wiederverwendet (nicht pro
         # Schritt neu erzeugt!). Anders als beim früheren aiohttp-Ansatz
@@ -122,6 +126,42 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             self._httpx_client = None
             self._client = None
 
+    def _add_status(self, de: str, en: str) -> None:
+        """Fügt eine erledigte (grüne) Statuszeile hinzu."""
+        self._status_lines.append((de, en))
+
+    def _status_block(self, pending: list[tuple[str, str]] | None = None) -> str:
+        """Baut den zweisprachigen Fortschritts-Block (Markdown) für die
+
+        Anzeige über einem Einrichtungsschritt: bereits erledigte Prüfungen
+        mit grünem Haken, noch offene Schritte mit leerem Kästchen. Die
+        Sprache richtet sich nach der aktiven Home-Assistant-Sprache; kann
+        sie nicht bestimmt werden, wird Deutsch genutzt.
+
+        `pending` sind optionale, noch offene Schritte (de, en), die unter
+        den erledigten mit ⬜ angezeigt werden.
+        """
+        lang = "de"
+        try:
+            lang = (self.hass.config.language or "de").split("-")[0].lower()
+        except AttributeError:
+            lang = "de"
+        idx = 1 if lang == "en" else 0
+
+        if not self._status_lines and not pending:
+            return ""
+
+        header = "**Setup progress**" if idx == 1 else "**Einrichtungs-Fortschritt**"
+        lines = [header, ""]
+        for entry in self._status_lines:
+            lines.append(f"✅ {entry[idx]}")
+        if pending:
+            for entry in pending:
+                lines.append(f"⬜ {entry[idx]}")
+        lines.append("")
+        lines.append("---")
+        return "\n".join(lines)
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> "ConfigFlowResult":
@@ -133,6 +173,10 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
 
             if await async_check_host_reachable(host, port=443):
                 self._host = host
+                self._add_status(
+                    f"Gateway erreichbar ({host}:443, TLS)",
+                    f"Gateway reachable ({host}:443, TLS)",
+                )
                 return await self.async_step_credentials()
 
             errors["base"] = "cannot_connect"
@@ -195,6 +239,16 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(self._host)
                 self._abort_if_unique_id_configured()
+                fw = getattr(self._client, "firmware_version", None)
+                if fw:
+                    self._add_status(
+                        f"Zugangsdaten gültig · Firmware {fw}",
+                        f"Credentials valid · firmware {fw}",
+                    )
+                else:
+                    self._add_status(
+                        "Zugangsdaten gültig", "Credentials valid"
+                    )
                 return await self.async_step_meters()
 
         schema = vol.Schema(
@@ -211,6 +265,12 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 "host": self._host or "",
                 "debug_info": debug_info,
                 "version": VERSION,
+                "status": self._status_block(
+                    pending=[
+                        ("Zugangsdaten prüfen", "Verify credentials"),
+                        ("Zähler auswählen", "Select meters"),
+                    ]
+                ),
             },
         )
 
@@ -227,6 +287,13 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         if not self._meters:
             try:
                 self._meters = await self._client.list_meters(self._token)
+                if self._meters and not any(
+                    "Zähler gefunden" in s[0] for s in self._status_lines
+                ):
+                    self._add_status(
+                        f"{len(self._meters)} Zähler am Gateway gefunden",
+                        f"{len(self._meters)} meter(s) found on gateway",
+                    )
             except (PPCSmgwConnectionError, PPCSmgwAuthError) as err:
                 # Kann bei PPCSmgwAuthError passieren, wenn die Session
                 # zwischen Login-Schritt und diesem Schritt abgelaufen ist.
@@ -263,7 +330,13 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="meters",
             data_schema=schema,
-            description_placeholders={"debug_info": "", "version": VERSION},
+            description_placeholders={
+                "debug_info": "",
+                "version": VERSION,
+                "status": self._status_block(
+                    pending=[("Zähler auswählen", "Select meters")]
+                ),
+            },
         )
 
     async def async_step_tariffs(
@@ -321,7 +394,16 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="tariffs",
             data_schema=schema,
-            description_placeholders={"debug_info": "", "version": VERSION},
+            description_placeholders={
+                "debug_info": "",
+                "version": VERSION,
+                "status": self._status_block(
+                    pending=[
+                        ("Auswertungsprofile wählen", "Select evaluation profiles"),
+                        ("Historien-Import (optional)", "History import (optional)"),
+                    ]
+                ),
+            },
         )
 
     async def async_step_history(
@@ -392,6 +474,14 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 },
             )
 
+        if not any("ausgewählt" in s[0] for s in self._status_lines):
+            meter_n = len(self._selected_meter_ids)
+            tariff_n = len(self._selected_tariff_ids)
+            self._add_status(
+                f"{meter_n} Zähler, {tariff_n} Auswertungsprofil(e) ausgewählt",
+                f"{meter_n} meter(s), {tariff_n} evaluation profile(s) selected",
+            )
+
         kwh_selector = selector.NumberSelector(
             selector.NumberSelectorConfig(
                 mode=selector.NumberSelectorMode.BOX, unit_of_measurement="kWh"
@@ -408,7 +498,12 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="history",
             data_schema=schema,
-            description_placeholders={"version": VERSION},
+            description_placeholders={
+                "version": VERSION,
+                "status": self._status_block(
+                    pending=[("Historien-Import (optional)", "History import (optional)")]
+                ),
+            },
         )
 
     async def async_step_reconfigure(

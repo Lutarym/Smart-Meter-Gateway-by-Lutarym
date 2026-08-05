@@ -5,6 +5,23 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 2.5.0
+
+**Einrichtungsassistent zeigt jetzt einen Fortschritts-Status mit Häkchen**
+
+- Über jedem Schritt des Einrichtungsassistenten erscheint eine
+  zweisprachige (DE/EN) Fortschrittsliste: bereits erfolgreich geprüfte
+  Punkte mit grünem Haken, noch offene Schritte mit leerem Kästchen. So
+  ist auf einen Blick klar, was schon funktioniert.
+- Angezeigt werden u.a.: Gateway erreichbar (mit IP:Port und TLS),
+  Zugangsdaten gültig (mit erkannter Firmware-Version), Anzahl der am
+  Gateway gefundenen Zähler, getroffene Zähler-/Profilauswahl und der
+  optionale Historien-Import.
+- Umgesetzt über Markdown mit Emoji in den Schritt-Beschreibungen (die
+  einzige von Home Assistant im Config-Flow unterstützte Möglichkeit -
+  echte Grafik-Widgets/HTML sind dort nicht erlaubt). Die Sprache richtet
+  sich nach der aktiven Home-Assistant-Sprache.
+
 ## 2.4.7
 
 **Viertelstündlicher Export wird jetzt korrekt importiert (Aggregation auf

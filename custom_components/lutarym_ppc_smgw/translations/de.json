@@ -10,7 +10,7 @@
       },
       "credentials": {
         "title": "Gateway-Login",
-        "description": "Das Gateway unter {host} ist erreichbar. Gib jetzt die HAN-Zugangsdaten ein, die du von deinem Messstellenbetreiber erhalten hast.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
+        "description": "{status}\n\nDas Gateway unter {host} ist erreichbar. Gib jetzt die HAN-Zugangsdaten ein, die du von deinem Messstellenbetreiber erhalten hast.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
         "data": {
           "username": "Benutzername",
           "password": "Passwort"
@@ -27,21 +27,21 @@
       },
       "meters": {
         "title": "Zähler auswählen",
-        "description": "Es wurden folgende Zähler am Gateway gefunden. Wähle aus, welche als Sensoren angelegt werden sollen.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
+        "description": "{status}\n\nEs wurden folgende Zähler am Gateway gefunden. Wähle aus, welche als Sensoren angelegt werden sollen.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
         "data": {
           "meter_ids": "Zähler"
         }
       },
       "tariffs": {
         "title": "Auswertungsprofile auswählen",
-        "description": "Folgende Auswertungsprofile sind mit diesen HAN-Zugangsdaten sichtbar. Das können auch abgelaufene/historische Profile früherer Stromanbieter-Wechsel sein - wähle aus, welche als Entitäten angelegt werden sollen.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
+        "description": "{status}\n\nFolgende Auswertungsprofile sind mit diesen HAN-Zugangsdaten sichtbar. Das können auch abgelaufene/historische Profile früherer Stromanbieter-Wechsel sein - wähle aus, welche als Entitäten angelegt werden sollen.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
         "data": {
           "tariff_ids": "Auswertungsprofile"
         }
       },
       "history": {
         "title": "Optional: Historische Daten importieren",
-        "description": "Lade eine TraveNetz-Exportdatei für OBIS 1-0:1.8.0 (Netzbezug) hoch, um sie zu importieren — keine Skalierung, keine andere Entity. Unterstützt den Tages- und den 15-Minuten-Export (auch für dynamische Tarife). Die Werte werden rückwärts vom aktuellen Zählerstand (live vom Gateway) verankert, ein Startwert muss nicht angegeben werden. Beide Felder leer lassen überspringt diesen Schritt komplett.\n\nInstallierte Integrationsversion: {version}",
+        "description": "{status}\n\nLade eine TraveNetz-Exportdatei für OBIS 1-0:1.8.0 (Netzbezug) hoch, um sie zu importieren — keine Skalierung, keine andere Entity. Unterstützt den Tages- und den 15-Minuten-Export (auch für dynamische Tarife). Die Werte werden rückwärts vom aktuellen Zählerstand (live vom Gateway) verankert, ein Startwert muss nicht angegeben werden. Beide Felder leer lassen überspringt diesen Schritt komplett.\n\nInstallierte Integrationsversion: {version}",
         "data": {
           "csv_upload": "TraveNetz-CSV-Export",
           "start_value": "Startwert (nur Fallback, falls kein Live-Wert abrufbar)"

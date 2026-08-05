@@ -10,7 +10,7 @@
       },
       "credentials": {
         "title": "Gateway login",
-        "description": "The gateway at {host} is reachable. Enter the HAN login credentials you received from your metering point operator (Messstellenbetreiber).\n\nInstalled integration version: {version}\n\n{debug_info}",
+        "description": "{status}\n\nThe gateway at {host} is reachable. Enter the HAN login credentials you received from your metering point operator (Messstellenbetreiber).\n\nInstalled integration version: {version}\n\n{debug_info}",
         "data": {
           "username": "Username",
           "password": "Password"
@@ -18,14 +18,14 @@
       },
       "meters": {
         "title": "Select meters",
-        "description": "The following meters were found on the gateway. Choose which ones should be created as sensors.\n\nInstalled integration version: {version}\n\n{debug_info}",
+        "description": "{status}\n\nThe following meters were found on the gateway. Choose which ones should be created as sensors.\n\nInstalled integration version: {version}\n\n{debug_info}",
         "data": {
           "meter_ids": "Meters"
         }
       },
       "tariffs": {
         "title": "Select evaluation profiles",
-        "description": "The following evaluation profiles (Auswertungsprofile) are visible with these HAN credentials. This can include expired/historical profiles from previous energy supplier changes - choose which ones should be created as entities.\n\nInstalled integration version: {version}\n\n{debug_info}",
+        "description": "{status}\n\nThe following evaluation profiles (Auswertungsprofile) are visible with these HAN credentials. This can include expired/historical profiles from previous energy supplier changes - choose which ones should be created as entities.\n\nInstalled integration version: {version}\n\n{debug_info}",
         "data": {
           "tariff_ids": "Evaluation profiles"
         }
@@ -41,7 +41,7 @@
       },
       "history": {
         "title": "Optional: import historical data",
-        "description": "Upload a TraveNetz export file for OBIS 1-0:1.8.0 (grid draw) to import it — no scaling, no other entity. Supports the daily and the 15-minute export (also for dynamic tariffs). Values are anchored backwards from the current meter reading (live from the gateway); no start value is required. Leave both fields empty to skip this step entirely.\n\nInstalled integration version: {version}",
+        "description": "{status}\n\nUpload a TraveNetz export file for OBIS 1-0:1.8.0 (grid draw) to import it — no scaling, no other entity. Supports the daily and the 15-minute export (also for dynamic tariffs). Values are anchored backwards from the current meter reading (live from the gateway); no start value is required. Leave both fields empty to skip this step entirely.\n\nInstalled integration version: {version}",
         "data": {
           "csv_upload": "TraveNetz CSV export",
           "start_value": "Start value (fallback only, if no live value available)"
