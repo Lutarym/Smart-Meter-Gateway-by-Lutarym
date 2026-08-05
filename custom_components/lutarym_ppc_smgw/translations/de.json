@@ -62,10 +62,13 @@
   "options": {
     "step": {
       "init": {
-        "title": "Zähler-/Profilauswahl anpassen",
+        "title": "Zähler, Profile und Abrufhäufigkeit anpassen",
+        "description": "Wähle aus, welche Zähler ausgelesen werden und wie oft das Gateway abgefragt wird. Auswertungsprofile sind optional – ausgeschaltet bleibt jeder Abrufzyklus kurz, was das Gateway entlastet.",
         "data": {
           "meter_ids": "Zähler",
-          "tariff_ids": "Auswertungsprofile"
+          "fetch_tariff_profiles": "Auswertungsprofile zusätzlich abrufen",
+          "tariff_ids": "Auswertungsprofile (nur genutzt, wenn oben aktiviert)",
+          "scan_interval": "Abrufintervall"
         }
       }
     },

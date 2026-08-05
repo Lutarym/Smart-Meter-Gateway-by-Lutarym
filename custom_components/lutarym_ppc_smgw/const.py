@@ -1,4 +1,4 @@
-# Integrationsversion: 2.4.0
+# Integrationsversion: 2.4.1
 """Konstanten für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 # Interner, technischer Bezeichner der Integration. Wird u.a. für
@@ -21,6 +21,32 @@ CONF_TARIFF_IDS = "tariff_ids"
 
 DEFAULT_SCAN_INTERVAL_SECONDS = 900  # Entspricht dem Ausleseintervall des Gateways (15 Min).
 
+# Schlüssel für das in entry.options gespeicherte, nutzerkonfigurierbare
+# Poll-Intervall in Sekunden. Fehlt der Schlüssel (z.B. bei Entries, die
+# vor Einführung dieser Option angelegt wurden), gilt
+# DEFAULT_SCAN_INTERVAL_SECONDS. Untergrenze bewusst bei 5 Minuten, um das
+# Gateway (embedded Webserver, nur eine aktive Session) nicht durch zu
+# häufige Login-Zyklen zu belasten.
+CONF_SCAN_INTERVAL = "scan_interval"
+MIN_SCAN_INTERVAL_SECONDS = 300
+
+# Schlüssel für die in entry.options gespeicherte Einstellung, ob
+# Auswertungsprofile überhaupt abgefragt werden sollen. Default: False
+# (nur 1-0:1.8.0/1-0:2.8.0 + Zähler-Stammdaten + Firmware abrufen - siehe
+# ONLY_TRACKED_OBIS_CODES). Auswertungsprofile verursachen pro Profil
+# einen zusätzlichen Request-Zyklus (list_tariff_profiles +
+# get_tariff_profile_value je Profil) und werden für die reine
+# Bezug/Einspeisung-Auswertung nicht benötigt.
+CONF_FETCH_TARIFF_PROFILES = "fetch_tariff_profiles"
+
+# Die einzigen OBIS-Codes, die bei deaktivierten Auswertungsprofilen
+# (Standardeinstellung) als Werte-Entität angelegt werden - alle anderen,
+# vom Gateway ggf. zusätzlich gelieferten OBIS-Zeilen werden ignoriert.
+# Reduziert sowohl die Zahl der angelegten Entitäten als auch (indirekt,
+# weil weniger relevante Daten verarbeitet werden müssen) den Aufwand pro
+# Zyklus.
+ONLY_TRACKED_OBIS_CODES = {"1-0:1.8.0", "1-0:2.8.0"}
+
 MANUFACTURER = "Power Plus Communications AG"
 MODEL = "LTE Smart Meter Gateway"
 
@@ -32,7 +58,7 @@ HAN_PATH = "/cgi-bin/hanservice.cgi"
 # Wird im Config-Flow-Dialog und als Geräte-Softwareversion angezeigt, damit
 # man die installierte Version prüfen kann, auch bevor eine Verbindung
 # erfolgreich zustande kommt.
-VERSION = "2.4.0"
+VERSION = "2.4.1"
 
 # Service "lutarym_ppc_smgw.import_history" - einmaliger Import einer
 # korrigierten historischen Zeitreihe für den 1-0:1.8.0-Sensor

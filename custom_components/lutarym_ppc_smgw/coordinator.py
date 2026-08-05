@@ -1,4 +1,4 @@
-# Integrationsversion: 2.4.0
+# Integrationsversion: 2.4.1
 """DataUpdateCoordinator für das PPC Smart Meter Gateway.
 
 Ein Update-Zyklus (_async_update_data) entspricht genau einem
@@ -23,7 +23,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import PPCSmgwAuthError, PPCSmgwClient, PPCSmgwConnectionError, PPCSmgwParsingError
-from .const import DOMAIN, MANUFACTURER, MODEL, VERSION
+from .const import DOMAIN, MANUFACTURER, MODEL, ONLY_TRACKED_OBIS_CODES, VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -115,11 +115,16 @@ class PPCSmgwCoordinator(DataUpdateCoordinator[dict[str, dict]]):
         meter_labels: list[str] | None,
         tariff_labels: list[str] | None,
         update_interval: timedelta,
+        fetch_tariff_profiles: bool = False,
     ) -> None:
         super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=update_interval)
         self.client = client
         self.meter_labels = meter_labels  # None = alle am Gateway gefundenen Zähler
         self.tariff_labels = tariff_labels  # None = alle gefundenen Auswertungsprofile
+        # Siehe CONF_FETCH_TARIFF_PROFILES in const.py - Standard False:
+        # nur 1-0:1.8.0/1-0:2.8.0 + Zähler-Stammdaten + Firmware abrufen,
+        # keine Auswertungsprofile.
+        self.fetch_tariff_profiles = fetch_tariff_profiles
         self.available_meters: list[dict[str, str]] = []
         self.available_tariff_profiles: list[dict[str, str]] = []
         # Siehe MAX_CONSECUTIVE_FAILURES_BEFORE_UNAVAILABLE weiter oben.
@@ -164,7 +169,13 @@ class PPCSmgwCoordinator(DataUpdateCoordinator[dict[str, dict]]):
                 readings = await self.client.get_meter_readings(token, match["mid"])
                 # Ein Zähler kann mehrere OBIS-Zeilen liefern (1.8.0 UND
                 # 2.8.0) - jede wird zu einem eigenen data-Eintrag/Sensor.
+                # NUR die in ONLY_TRACKED_OBIS_CODES gelisteten Codes werden
+                # übernommen (Standard: 1-0:1.8.0/1-0:2.8.0) - andere, vom
+                # Gateway ggf. zusätzlich gelieferte OBIS-Zeilen werden
+                # bewusst verworfen, siehe const.py.
                 for reading in readings:
+                    if reading["obis"] not in ONLY_TRACKED_OBIS_CODES:
+                        continue
                     key = f"{label}{METER_OBIS_SEPARATOR}{reading['obis']}"
                     data[key] = self._validate_meter_reading(key, reading)
 
@@ -186,6 +197,14 @@ class PPCSmgwCoordinator(DataUpdateCoordinator[dict[str, dict]]):
             # dieselbe data-Struktur aufnehmen, damit sensor.py daraus
             # eigene Entitäten anlegen kann. Leere Liste (explizit nichts
             # ausgewählt) bedeutet: keine Auswertungsprofile abrufen.
+            # KOMPLETT übersprungen, wenn fetch_tariff_profiles deaktiviert
+            # ist (Standard seit 2.2.0) - spart pro deaktiviertem Profil
+            # einen kompletten zusätzlichen Request-Zyklus (siehe
+            # __init__.py/const.py: CONF_FETCH_TARIFF_PROFILES).
+            if not self.fetch_tariff_profiles:
+                self._consecutive_failures = 0
+                return data
+
             self.available_tariff_profiles = await self.client.list_tariff_profiles(token)
             tariff_labels_to_fetch = (
                 self.available_tariff_profiles
