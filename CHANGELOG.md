@@ -5,6 +5,28 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 2.4.3
+
+**Historien-Import: rückwärts vom aktuellen Zählerstand rechnen**
+
+- Der 1:1-CSV-Import (TraveNetz) rechnet die kumulierte Reihe jetzt
+  standardmäßig RÜCKWÄRTS: Der aktuelle HAN-Live-Zählerstand (1-0:1.8.0,
+  beim Import frisch abgerufen) wird als Anker auf die LETZTE CSV-Zeile
+  gelegt und von dort Stunde für Stunde nach hinten abgezogen. Der
+  Startwert ergibt sich rechnerisch und muss nicht mehr vorgegeben werden.
+- Hintergrund: Bisher wurde vorwärts ab einem manuell gesetzten Startwert
+  auf der ERSTEN CSV-Zeile gerechnet. War unklar, welcher realen Zeit die
+  erste Zeile entspricht bzw. stimmte der Aufzeichnungsbeginn nicht,
+  verschob sich die gesamte Kurve. Der aktuelle Zählerendstand ist die
+  verlässliche Größe - daran wird jetzt verankert.
+- Die frühere "Brücke bis jetzt" (lineare Interpolation vom CSV-Ende zum
+  Live-Wert) entfällt im Rückwärts-Modus, weil der Live-Wert bereits der
+  Endpunkt der Reihe ist - es gibt nichts mehr zu überbrücken.
+- Fallback: Ist der Live-Wert beim Import nicht abrufbar, greift
+  weiterhin der bisherige Vorwärts-Modus mit vorgegebenem Startwert.
+- Der resultierende Verlauf bleibt streng monoton steigend
+  (total_increasing-konform); die Monatsaufteilung ist unverändert.
+
 ## 2.4.2
 
 _(Version 2.4.1 wurde übersprungen - deren Umfang ist vollständig in diesem Release enthalten.)_

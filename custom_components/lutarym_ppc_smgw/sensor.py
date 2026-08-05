@@ -1,4 +1,4 @@
-# Integrationsversion: 2.4.2
+# Integrationsversion: 2.4.3
 """Sensor-Plattform für die PPC Smart Meter Gateway Integration.
 
 Jedes einzelne von der API gelieferte Feld wird als EIGENE Entität

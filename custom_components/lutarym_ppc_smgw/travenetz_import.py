@@ -1,4 +1,4 @@
-# Integrationsversion: 2.4.2
+# Integrationsversion: 2.4.3
 """1:1-Import einer TraveNetz/iMSys-CSV-Exportdatei (stündliche
 
 "Energie bezogen"-Werte) in die Langzeit-Statistik dieser Integration.
@@ -144,42 +144,84 @@ async def import_csv_history(
     csv_path: str,
     start_value_kwh: float = 0.0,
     extend_to_now_value_kwh: float | None = None,
+    anchor_end_value_kwh: float | None = None,
     dry_run: bool = False,
 ) -> dict:
-    """Liest eine TraveNetz-CSV-Exportdatei und schreibt die Werte 1:1
+    """Liest eine TraveNetz-CSV-Exportdatei und schreibt die Werte in die
 
-    (kumuliert ab start_value_kwh) in die Langzeit-Statistik der
-    Ziel-Entity. Kein Skalieren, keine andere Entity - reine Übernahme
-    echter Messwerte.
+    Langzeit-Statistik der Ziel-Entity. Kein Skalieren, keine andere
+    Entity - reine Übernahme echter Messwerte.
 
-    WICHTIG: Falls extend_to_now_value_kwh angegeben ist, wird die Reihe
-    zusätzlich vom letzten CSV-Zeitpunkt bis zur aktuellen Stunde linear
-    aufgefüllt (einfacher Übergang, keine echten Daten für diesen kurzen
-    Rest-Zeitraum vorhanden) und überschreibt dabei alte, evtl. noch
-    vorhandene Statistik-Einträge in diesem Fenster (z.B. Reste eines
-    früheren, jetzt überholten Imports) - sonst würde die Live-
-    Weiterverfolgung an einem falschen "letzten bekannten Stand"
-    anknüpfen und einen Sprung erzeugen.
+    Zwei Kumulierungs-Modi:
+
+    * VORWÄRTS (Standard, anchor_end_value_kwh is None): Die Reihe beginnt
+      bei start_value_kwh und addiert Zeile für Zeile die Deltas auf. Der
+      ANFANG ist damit fixiert - problematisch, wenn unklar ist, welcher
+      realen Zeit die erste CSV-Zeile entspricht (dann verschiebt sich die
+      ganze Kurve).
+
+    * RÜCKWÄRTS (anchor_end_value_kwh gesetzt): Der verlässliche ENDwert
+      (z.B. der aktuelle HAN-Live-Zählerstand von 1-0:1.8.0) wird auf die
+      LETZTE CSV-Zeile gelegt und von dort Delta für Delta rückwärts
+      abgezogen. Der Startwert ergibt sich rechnerisch und wird NICHT mehr
+      vorgegeben. Das ist robuster, weil der Zählerendstand die sichere
+      Größe ist, nicht der Aufzeichnungsbeginn. start_value_kwh wird in
+      diesem Modus ignoriert; extend_to_now_value_kwh ebenfalls (der Anker
+      IST bereits der aktuelle Wert - es gibt nichts mehr zu überbrücken).
+
+    WICHTIG (nur VORWÄRTS-Modus): Falls extend_to_now_value_kwh angegeben
+    ist, wird die Reihe zusätzlich vom letzten CSV-Zeitpunkt bis zur
+    aktuellen Stunde linear aufgefüllt und überschreibt dabei alte, evtl.
+    noch vorhandene Statistik-Einträge in diesem Fenster.
     """
     rows = await hass.async_add_executor_job(_parse_travenetz_csv_sync, csv_path)
     filled = _fill_internal_gaps(rows)
     timestamps = sorted(filled)
 
-    cumulative = start_value_kwh
     stats: list[StatisticData] = []
     month_summary: dict[str, float] = {}
-    for ts in timestamps:
-        delta = filled[ts]
-        cumulative += delta
-        stats.append(
-            StatisticData(start=ts, state=round(cumulative, 4), sum=round(cumulative, 4))
-        )
-        key = f"{ts.year:04d}-{ts.month:02d}"
-        month_summary[key] = month_summary.get(key, 0.0) + delta
+
+    if anchor_end_value_kwh is not None:
+        # RÜCKWÄRTS: letzte CSV-Zeile trägt exakt den Ankerwert, davor wird
+        # Delta für Delta abgezogen. cumulative[i] = anchor - sum(delta[j]
+        # für j > i). Das delta EINER Zeile ist der Zuwachs, der zu DIESER
+        # Zeile hin passiert ist, bleibt also in ihrem Stand enthalten.
+        cumulative = anchor_end_value_kwh
+        stats_reversed: list[StatisticData] = []
+        for ts in reversed(timestamps):
+            stats_reversed.append(
+                StatisticData(
+                    start=ts, state=round(cumulative, 4), sum=round(cumulative, 4)
+                )
+            )
+            key = f"{ts.year:04d}-{ts.month:02d}"
+            month_summary[key] = month_summary.get(key, 0.0) + filled[ts]
+            # Für die VORHERIGE (ältere) Zeile den Zuwachs dieser Zeile
+            # abziehen.
+            cumulative -= filled[ts]
+        stats = list(reversed(stats_reversed))
+        computed_start_value = round(cumulative + filled[timestamps[0]], 4) if timestamps else anchor_end_value_kwh
+        # Hinweis: cumulative ist jetzt (anchor - Summe ALLER Deltas) =
+        # der Stand VOR der ersten Zeile. Der "Startwert" im Sinne des
+        # Standes AN der ersten Zeile ist computed_start_value.
+        cumulative_final = anchor_end_value_kwh
+    else:
+        # VORWÄRTS (unverändertes bisheriges Verhalten).
+        cumulative = start_value_kwh
+        for ts in timestamps:
+            delta = filled[ts]
+            cumulative += delta
+            stats.append(
+                StatisticData(start=ts, state=round(cumulative, 4), sum=round(cumulative, 4))
+            )
+            key = f"{ts.year:04d}-{ts.month:02d}"
+            month_summary[key] = month_summary.get(key, 0.0) + delta
+        computed_start_value = start_value_kwh
+        cumulative_final = cumulative
 
     bridged_hours = 0
     bridge_skipped_reason: str | None = None
-    if extend_to_now_value_kwh is not None:
+    if extend_to_now_value_kwh is not None and anchor_end_value_kwh is None:
         last_ts = timestamps[-1]
         now_hour = datetime.now(tz=last_ts.tzinfo).replace(minute=0, second=0, microsecond=0)
         bridge_slots = []
@@ -259,8 +301,10 @@ async def import_csv_history(
         "last_timestamp": timestamps[-1].isoformat(),
         "bridged_hours_to_now": bridged_hours,
         "bridge_skipped_reason": bridge_skipped_reason,
-        "start_value_kwh": start_value_kwh,
-        "final_computed_kwh": round(cumulative, 4),
+        "mode": "backward_from_anchor" if anchor_end_value_kwh is not None else "forward_from_start",
+        "start_value_kwh": computed_start_value,
+        "anchor_end_value_kwh": anchor_end_value_kwh,
+        "final_computed_kwh": round(cumulative_final, 4),
         "monthly_breakdown_kwh": {k: round(v, 2) for k, v in sorted(month_summary.items())},
         "dry_run": dry_run,
     }

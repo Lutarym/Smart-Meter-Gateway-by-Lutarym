@@ -1,4 +1,4 @@
-# Integrationsversion: 2.4.2
+# Integrationsversion: 2.4.3
 """PPC Smart Meter Gateway (iMSys) Integration für Home Assistant.
 
 Einstiegspunkt der Integration (von Home Assistant automatisch anhand des
@@ -305,24 +305,46 @@ async def _async_process_pending_history_import(
                             fresh_state.state,
                         )
 
-                summary = await import_csv_history(
-                    hass,
-                    target_statistic_id=target_entity,
-                    target_name=target_name,
-                    csv_path=payload["csv_path"],
-                    start_value_kwh=float(payload.get("start_value") or 0.0),
-                    extend_to_now_value_kwh=extend_value,
-                    dry_run=False,
-                )
+                # Rückwärts-Modus (bevorzugt): der frisch abgerufene
+                # Live-Wert (extend_value) wird als ANKER auf die letzte
+                # CSV-Zeile gelegt und von dort rückwärts gerechnet - der
+                # Startwert ergibt sich daraus. Robuster, weil der aktuelle
+                # Zählerstand die verlässliche Größe ist, nicht der
+                # (oft unsichere) Aufzeichnungsbeginn. Fällt der Live-Wert
+                # aus (extend_value is None), greift der bisherige
+                # Vorwärts-Modus mit vorgegebenem Startwert als Fallback.
+                if extend_value is not None:
+                    summary = await import_csv_history(
+                        hass,
+                        target_statistic_id=target_entity,
+                        target_name=target_name,
+                        csv_path=payload["csv_path"],
+                        anchor_end_value_kwh=extend_value,
+                        dry_run=False,
+                    )
+                else:
+                    summary = await import_csv_history(
+                        hass,
+                        target_statistic_id=target_entity,
+                        target_name=target_name,
+                        csv_path=payload["csv_path"],
+                        start_value_kwh=float(payload.get("start_value") or 0.0),
+                        dry_run=False,
+                    )
                 breakdown = ", ".join(
                     f"{k}: {v:.1f} kWh" for k, v in summary["monthly_breakdown_kwh"].items()
                 )
-                if summary.get("bridge_skipped_reason"):
+                if summary.get("mode") == "backward_from_anchor":
+                    bridge_note = (
+                        f" (rückwärts gerechnet ab Live-Anker "
+                        f"{summary['anchor_end_value_kwh']:.2f} kWh auf der letzten CSV-Zeile)"
+                    )
+                elif summary.get("bridge_skipped_reason"):
                     bridge_note = f" (⚠️ Brücke NICHT geschrieben: {summary['bridge_skipped_reason']})"
                 elif summary.get("bridged_hours_to_now"):
                     bridge_note = f" (+ {summary['bridged_hours_to_now']} Std. bis jetzt überbrückt)"
                 else:
-                    bridge_note = " (keine Brücke bis jetzt - aktueller Wert nicht verfügbar)"
+                    bridge_note = " (Vorwärts-Modus, kein Live-Anker verfügbar)"
                 message = (
                     f"1:1-CSV-Import für {target_entity} abgeschlossen "
                     f"({summary['csv_path']}).\n\n"
@@ -501,15 +523,27 @@ async def _async_handle_import_history(hass: HomeAssistant, call: ServiceCall) -
                     state.state,
                 )
 
-        summary = await import_csv_history(
-            hass,
-            target_statistic_id=target_entity,
-            target_name=friendly_name,
-            csv_path=csv_path,
-            start_value_kwh=call.data.get(ATTR_START_VALUE) or 0.0,
-            extend_to_now_value_kwh=extend_value,
-            dry_run=call.data[ATTR_DRY_RUN],
-        )
+        # Rückwärts-Modus bevorzugt: Live-Wert als Anker auf letzte
+        # CSV-Zeile (siehe ausführliche Begründung beim Config-Flow-
+        # Aufrufer oben). Fallback auf Vorwärts, wenn kein Live-Wert da.
+        if extend_value is not None:
+            summary = await import_csv_history(
+                hass,
+                target_statistic_id=target_entity,
+                target_name=friendly_name,
+                csv_path=csv_path,
+                anchor_end_value_kwh=extend_value,
+                dry_run=call.data[ATTR_DRY_RUN],
+            )
+        else:
+            summary = await import_csv_history(
+                hass,
+                target_statistic_id=target_entity,
+                target_name=friendly_name,
+                csv_path=csv_path,
+                start_value_kwh=call.data.get(ATTR_START_VALUE) or 0.0,
+                dry_run=call.data[ATTR_DRY_RUN],
+            )
         summary["target_entity"] = target_entity
         return summary
 
