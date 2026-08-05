@@ -1,4 +1,4 @@
-# Integrationsversion: 2.4.3
+# Integrationsversion: 2.4.4
 """1:1-Import einer TraveNetz/iMSys-CSV-Exportdatei (stündliche
 
 "Energie bezogen"-Werte) in die Langzeit-Statistik dieser Integration.
@@ -57,6 +57,19 @@ def _parse_travenetz_csv_sync(path: str) -> list[tuple[datetime, float]]:
     """Blockierendes Datei-Parsing - MUSS im Executor laufen (siehe
 
     import_csv_history), nicht direkt im Event-Loop.
+
+    WICHTIG zur Einheit: Der TraveNetz-Export liefert in Spalte 3 die
+    mittlere LEISTUNG des Intervalls in kW (Spaltenkopf "Einheit" = "kW"),
+    NICHT bereits die Energie in kWh. Die Energie eines Intervalls ergibt
+    sich physikalisch als Leistung x Dauer:
+
+        kWh = kW x Intervalldauer_in_Stunden
+
+    Die Intervalldauer wird aus den Spalten "von" (r[0]) und "bis" (r[1])
+    berechnet, statt sie anzunehmen - dadurch funktioniert der Import
+    unverändert für den Tages-Export (24 h pro Zeile) UND für einen
+    15-Minuten-Export (0,25 h pro Zeile), ohne Code-Änderung. Jede Zeile
+    wird als (Startzeitpunkt_UTC, Energie_kWh) zurückgegeben.
     """
     rows: list[tuple[datetime, float]] = []
     try:
@@ -65,17 +78,27 @@ def _parse_travenetz_csv_sync(path: str) -> list[tuple[datetime, float]]:
             for i, r in enumerate(reader):
                 if i < 2 or len(r) < 5:
                     continue  # Kopfzeilen / leere/kurze Zeilen überspringen
-                val = _parse_value(r[2])
-                if val is None:
+                power_kw = _parse_value(r[2])
+                if power_kw is None:
                     continue  # "-" (Status F) - Lücke, wird unten interpoliert
                 try:
                     start_local_naive = datetime.strptime(
                         r[0].strip(), "%d.%m.%Y - %H:%M:%S"
                     )
+                    end_local_naive = datetime.strptime(
+                        r[1].strip(), "%d.%m.%Y - %H:%M:%S"
+                    )
                 except ValueError:
                     continue
+                # Intervalldauer in Stunden aus von/bis. Fällt auf 24 h
+                # zurück, falls bis <= von (defekte Zeile) - der
+                # Tages-Export ist der Normalfall.
+                duration_h = (end_local_naive - start_local_naive).total_seconds() / 3600.0
+                if duration_h <= 0:
+                    duration_h = 24.0
+                energy_kwh = power_kw * duration_h
                 start_local = start_local_naive.replace(tzinfo=_BERLIN)
-                rows.append((start_local.astimezone(_UTC), val))
+                rows.append((start_local.astimezone(_UTC), energy_kwh))
     except OSError as err:
         raise HistoryImportError(
             f"CSV-Datei '{path}' konnte nicht gelesen werden: {err}"
@@ -90,49 +113,78 @@ def _parse_travenetz_csv_sync(path: str) -> list[tuple[datetime, float]]:
     return rows
 
 
-def _fill_internal_gaps(rows: list[tuple[datetime, float]]) -> dict[datetime, float]:
-    """Baut ein lückenloses Stundenraster zwischen dem ersten und letzten
+def _median_step(timestamps: list[datetime]) -> timedelta:
+    """Ermittelt den typischen Abstand zwischen aufeinanderfolgenden
 
-    echten Datenpunkt - einzelne fehlende Stunden DAZWISCHEN (Status "F")
+    Datenpunkten (Median der Differenzen) - so passt sich das Raster
+    automatisch an Tages-, Stunden- oder 15-Minuten-Export an, statt eine
+    feste Stunde anzunehmen. Fällt auf 1 Tag zurück, wenn sich kein
+    Abstand bestimmen lässt.
+    """
+    if len(timestamps) < 2:
+        return timedelta(days=1)
+    diffs = sorted(
+        (timestamps[i + 1] - timestamps[i] for i in range(len(timestamps) - 1)),
+        key=lambda d: d.total_seconds(),
+    )
+    mid = diffs[len(diffs) // 2]
+    return mid if mid.total_seconds() > 0 else timedelta(days=1)
+
+
+def _fill_internal_gaps(rows: list[tuple[datetime, float]]) -> dict[datetime, float]:
+    """Baut ein lückenloses Raster zwischen dem ersten und letzten echten
+
+    Datenpunkt - einzelne fehlende Intervalle DAZWISCHEN (Status "F")
     werden linear zwischen den beiden umgebenden echten Werten
-    interpoliert. Lücken vor dem ersten bzw. nach dem letzten echten Punkt
-    werden NICHT erzeugt (das wäre Extrapolation, nicht Lückenschluss).
+    interpoliert. Der Rasterabstand wird aus den Daten selbst abgeleitet
+    (Median der Zeilenabstände), damit Tages-, Stunden- und
+    15-Minuten-Exporte gleichermassen korrekt behandelt werden. Lücken vor
+    dem ersten bzw. nach dem letzten echten Punkt werden NICHT erzeugt (das
+    wäre Extrapolation, nicht Lückenschluss).
     """
     by_ts = dict(rows)
-    first_ts, last_ts = rows[0][0], rows[-1][0]
+    timestamps_sorted = sorted(by_ts)
+    step = _median_step(timestamps_sorted)
+    first_ts, last_ts = timestamps_sorted[0], timestamps_sorted[-1]
 
     filled: dict[datetime, float] = {}
     cur = first_ts
     pending_gap_start: datetime | None = None
-    while cur <= last_ts:
-        if cur in by_ts:
+    # Toleranz: Zeitstempel muss nur nahe am Raster liegen (DST-Sprünge,
+    # kleine Rundungen), exakter Treffer wird über die nächstgelegene
+    # echte Zeit gesucht.
+    while cur <= last_ts + step / 2:
+        match = None
+        for ts in by_ts:
+            if abs((ts - cur).total_seconds()) < step.total_seconds() / 2:
+                match = ts
+                break
+        if match is not None:
             if pending_gap_start is not None:
-                # Lücke schliessen: linear zwischen dem Wert VOR der Lücke
-                # und dem jetzt gefundenen Wert NACH der Lücke interpolieren.
-                gap_hours = [
-                    t for t in filled_pending_range(pending_gap_start, cur)
-                ]
-                before_val = by_ts[gap_hours[0] - timedelta(hours=1)] if gap_hours else 0.0
-                after_val = by_ts[cur]
-                n = len(gap_hours) + 1
-                for i, gts in enumerate(gap_hours, start=1):
+                gap_slots = filled_pending_range(pending_gap_start, cur, step)
+                before_val = filled.get(pending_gap_start - step, 0.0)
+                after_val = by_ts[match]
+                n = len(gap_slots) + 1
+                for i, gts in enumerate(gap_slots, start=1):
                     filled[gts] = before_val + (after_val - before_val) * (i / n)
                 pending_gap_start = None
-            filled[cur] = by_ts[cur]
+            filled[cur] = by_ts[match]
         else:
             if pending_gap_start is None:
                 pending_gap_start = cur
-        cur += timedelta(hours=1)
+        cur += step
 
     return filled
 
 
-def filled_pending_range(start: datetime, stop_exclusive: datetime) -> list[datetime]:
+def filled_pending_range(
+    start: datetime, stop_exclusive: datetime, step: timedelta = timedelta(hours=1)
+) -> list[datetime]:
     out = []
     cur = start
     while cur < stop_exclusive:
         out.append(cur)
-        cur += timedelta(hours=1)
+        cur += step
     return out
 
 
@@ -186,6 +238,25 @@ async def import_csv_history(
         # Delta für Delta abgezogen. cumulative[i] = anchor - sum(delta[j]
         # für j > i). Das delta EINER Zeile ist der Zuwachs, der zu DIESER
         # Zeile hin passiert ist, bleibt also in ihrem Stand enthalten.
+        total_energy = sum(filled.values())
+        implied_start = anchor_end_value_kwh - total_energy
+        if implied_start < 0:
+            # Allgemeiner Plausibilitätsfall (nicht nutzerspezifisch): Die
+            # Summe der CSV-Energie ist größer als der als Anker gesetzte
+            # aktuelle Zählerstand. Rückwärts gerechnet würde der Beginn
+            # negativ - ein Zählerstand kann nicht unter 0 liegen. Ursache
+            # ist meist ein Zählerwechsel im CSV-Zeitraum oder ein zu
+            # niedriger/fehlerhafter Live-Wert. Klarer Fehler statt
+            # stillschweigend unsinniger (negativer) Stände.
+            raise HistoryImportError(
+                f"Rückwärts-Import nicht möglich: Die CSV summiert sich auf "
+                f"{total_energy:.1f} kWh, der aktuelle Zählerstand (Anker) ist "
+                f"aber nur {anchor_end_value_kwh:.1f} kWh. Der Reihenbeginn würde "
+                f"dadurch negativ ({implied_start:.1f} kWh). Das deutet auf einen "
+                "Zählerwechsel im Exportzeitraum oder einen zu kurzen/fehlerhaften "
+                "aktuellen Zählerstand hin. Bitte einen kürzeren CSV-Zeitraum "
+                "wählen oder den Zählerstand prüfen."
+            )
         cumulative = anchor_end_value_kwh
         stats_reversed: list[StatisticData] = []
         for ts in reversed(timestamps):

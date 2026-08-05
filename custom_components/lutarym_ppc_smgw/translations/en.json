@@ -41,10 +41,10 @@
       },
       "history": {
         "title": "Optional: import historical data",
-        "description": "Upload a TraveNetz export file for OBIS 1-0:1.8.0 (grid draw, hourly) to import it 1:1 - no scaling, no other entity. Leave both fields empty to skip this step entirely.\n\n\"Value at start\" is the meter reading at the very first row of the file (0 if it starts at meter installation).\n\nInstalled integration version: {version}",
+        "description": "Upload a TraveNetz export file for OBIS 1-0:1.8.0 (grid draw) to import it — no scaling, no other entity. Supports the daily and the 15-minute export (also for dynamic tariffs). Values are anchored backwards from the current meter reading (live from the gateway); no start value is required. Leave both fields empty to skip this step entirely.\n\nInstalled integration version: {version}",
         "data": {
           "csv_upload": "TraveNetz CSV export",
-          "start_value": "Value at the first row (kWh)"
+          "start_value": "Start value (fallback only, if no live value available)"
         }
       }
     },

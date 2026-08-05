@@ -41,10 +41,10 @@
       },
       "history": {
         "title": "Optional: Historische Daten importieren",
-        "description": "Lade eine TraveNetz-Exportdatei für OBIS 1-0:1.8.0 (Bezug, stündlich) hoch, um sie 1:1 zu importieren — keine Skalierung, keine andere Entity. Beide Felder leer lassen überspringt diesen Schritt komplett.\n\n\"Wert an der ersten Zeile\" ist der Zählerstand in der allerersten Zeile der Datei (0, falls sie bei Zähler-Einbau beginnt).\n\nInstallierte Integrationsversion: {version}",
+        "description": "Lade eine TraveNetz-Exportdatei für OBIS 1-0:1.8.0 (Netzbezug) hoch, um sie zu importieren — keine Skalierung, keine andere Entity. Unterstützt den Tages- und den 15-Minuten-Export (auch für dynamische Tarife). Die Werte werden rückwärts vom aktuellen Zählerstand (live vom Gateway) verankert, ein Startwert muss nicht angegeben werden. Beide Felder leer lassen überspringt diesen Schritt komplett.\n\nInstallierte Integrationsversion: {version}",
         "data": {
           "csv_upload": "TraveNetz-CSV-Export",
-          "start_value": "Wert an der ersten Zeile (kWh)"
+          "start_value": "Startwert (nur Fallback, falls kein Live-Wert abrufbar)"
         }
       }
     },

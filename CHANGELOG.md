@@ -5,6 +5,33 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 2.4.4
+
+**CSV-Import: korrekte kW→kWh-Umrechnung, takt-unabhängig, Text korrigiert**
+
+- **Einheiten-Fix (Kern):** Der TraveNetz-Export liefert in der Wertspalte
+  die mittlere LEISTUNG des Intervalls in kW, nicht bereits die Energie in
+  kWh (Spaltenkopf "Einheit" = "kW"). Bisher wurde der Wert direkt als kWh
+  aufsummiert - dadurch waren die importierten Mengen grob falsch. Jetzt
+  wird korrekt `kWh = kW × Intervalldauer` gerechnet, wobei die Dauer aus
+  den Spalten "von"/"bis" jeder Zeile bestimmt wird.
+- **Takt-unabhängig:** Weil die Intervalldauer aus den Daten kommt,
+  funktioniert der Import ohne Code-Änderung sowohl für den Tages-Export
+  (24 h pro Zeile) als auch für den 15-Minuten-Export (0,25 h pro Zeile) -
+  letzteres relevant für Nutzer mit dynamischen Stromtarifen. Auch die
+  interne Lückenfüllung leitet ihr Raster jetzt aus dem tatsächlichen
+  Zeilenabstand ab (Median), statt fest ein Stundenraster anzunehmen
+  (das bei Tagesdaten 23 Fake-Lücken pro Tag erzeugt hätte).
+- **Plausibilitätsschutz (allgemein):** Ist im Rückwärts-Modus die
+  CSV-Gesamtenergie größer als der als Anker gesetzte aktuelle
+  Zählerstand, würde der Reihenbeginn negativ. Dieser Fall (z.B.
+  Zählerwechsel im Exportzeitraum) wird jetzt mit einer klaren
+  Fehlermeldung abgebrochen, statt unsinnige negative Stände zu schreiben.
+- **Text korrigiert:** Die Beschreibung im Import-Dialog sprach
+  fälschlich von "stündlich" und einem manuell zu setzenden Startwert.
+  Sie weist jetzt korrekt auf Tages-/15-Minuten-Unterstützung und die
+  Rückwärts-Verankerung am Live-Zählerstand hin.
+
 ## 2.4.3
 
 **Historien-Import: rückwärts vom aktuellen Zählerstand rechnen**
