@@ -1,4 +1,4 @@
-# Integrationsversion: 2.5.0
+# Integrationsversion: 2.5.1
 """Config Flow für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 from __future__ import annotations
@@ -90,6 +90,8 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         # die zwischen den Einrichtungsschritten angezeigt wird (siehe
         # _status_block). Jeder Eintrag: (de, en).
         self._status_lines: list[tuple[str, str]] = []
+        # Gemerkte Entry-Daten für den abschließenden summary-Schritt.
+        self._entry_data: dict[str, Any] = {}
         # WICHTIG: Dieselbe httpx-Client-/PPCSmgwClient-Instanz wird über
         # ALLE Einrichtungsschritte hinweg wiederverwendet (nicht pro
         # Schritt neu erzeugt!). Anders als beim früheren aiohttp-Ansatz
@@ -311,7 +313,11 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 step_id="meters",
                 data_schema=vol.Schema({}),
                 errors=errors,
-                description_placeholders={"debug_info": debug_info, "version": VERSION},
+                description_placeholders={
+                    "debug_info": debug_info,
+                    "version": VERSION,
+                    "status": self._status_block(),
+                },
             )
 
         options_list = [
@@ -375,7 +381,11 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 step_id="tariffs",
                 data_schema=vol.Schema({}),
                 errors=errors,
-                description_placeholders={"debug_info": debug_info, "version": VERSION},
+                description_placeholders={
+                    "debug_info": debug_info,
+                    "version": VERSION,
+                    "status": self._status_block(),
+                },
             )
 
         options_list = [
@@ -464,15 +474,21 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             # Dauerkonfiguration.
             if history_payload:
                 entry_data[ATTR_HISTORY_IMPORT] = history_payload
+                self._add_status(
+                    "Historien-Import vorbereitet (wird nach Einrichtung ausgeführt)",
+                    "History import prepared (runs after setup)",
+                )
+            else:
+                self._add_status(
+                    "Kein Historien-Import gewählt (übersprungen)",
+                    "No history import selected (skipped)",
+                )
 
-            return self.async_create_entry(
-                title=f"PPC SMGW ({self._host})",
-                data=entry_data,
-                options={
-                    CONF_METER_IDS: self._selected_meter_ids,
-                    CONF_TARIFF_IDS: self._selected_tariff_ids,
-                },
-            )
+            # Daten für den abschließenden Zusammenfassungs-Schritt merken,
+            # der die vollständige Häkchen-Liste zeigt und die Einrichtung
+            # per Klick abschließt.
+            self._entry_data = entry_data
+            return await self.async_step_summary()
 
         if not any("ausgewählt" in s[0] for s in self._status_lines):
             meter_n = len(self._selected_meter_ids)
@@ -503,6 +519,35 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 "status": self._status_block(
                     pending=[("Historien-Import (optional)", "History import (optional)")]
                 ),
+            },
+        )
+
+    async def async_step_summary(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "ConfigFlowResult":
+        """Abschluss-Schritt: zeigt die vollständige Häkchen-Liste aller
+
+        erfolgreich durchlaufenen Schritte und legt die Integration erst
+        an, wenn der Nutzer aktiv bestätigt (Button "Absenden"). So sieht
+        man am Ende auf einen Blick, dass jeder Schritt funktioniert hat -
+        statt dass die Häkchen zwischen den Eingabeformularen "durchhuschen".
+        """
+        if user_input is not None:
+            return self.async_create_entry(
+                title=f"PPC SMGW ({self._host})",
+                data=self._entry_data,
+                options={
+                    CONF_METER_IDS: self._selected_meter_ids,
+                    CONF_TARIFF_IDS: self._selected_tariff_ids,
+                },
+            )
+
+        return self.async_show_form(
+            step_id="summary",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "version": VERSION,
+                "status": self._status_block(),
             },
         )
 

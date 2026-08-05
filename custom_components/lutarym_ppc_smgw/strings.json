@@ -46,6 +46,10 @@
           "csv_upload": "TraveNetz CSV export",
           "start_value": "Start value (fallback only, if no live value available)"
         }
+      },
+      "summary": {
+        "title": "Finish setup",
+        "description": "{status}\n\nAll steps completed successfully. Click **Submit** to create the integration.\n\nInstalled integration version: {version}"
       }
     },
     "error": {

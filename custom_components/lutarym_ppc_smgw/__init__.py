@@ -1,4 +1,4 @@
-# Integrationsversion: 2.5.0
+# Integrationsversion: 2.5.1
 """PPC Smart Meter Gateway (iMSys) Integration für Home Assistant.
 
 Einstiegspunkt der Integration (von Home Assistant automatisch anhand des

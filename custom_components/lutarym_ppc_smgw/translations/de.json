@@ -46,6 +46,10 @@
           "csv_upload": "TraveNetz-CSV-Export",
           "start_value": "Startwert (nur Fallback, falls kein Live-Wert abrufbar)"
         }
+      },
+      "summary": {
+        "title": "Einrichtung abschließen",
+        "description": "{status}\n\nAlle Schritte wurden erfolgreich durchlaufen. Klicke auf **Absenden**, um die Integration anzulegen.\n\nInstallierte Integrationsversion: {version}"
       }
     },
     "error": {

@@ -5,6 +5,22 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 2.5.1
+
+**Abschließende Zusammenfassungs-Seite im Einrichtungsassistenten**
+
+- Am Ende der Einrichtung erscheint jetzt eine eigene Zusammenfassungs-
+  Seite, die ALLE erfolgreich durchlaufenen Schritte als grüne Häkchen-
+  Liste zeigt (Gateway erreichbar inkl. IP/Port/TLS, Zugangsdaten gültig
+  inkl. Firmware, gefundene Zähler, getroffene Auswahl, vorbereiteter bzw.
+  übersprungener Historien-Import). Die Integration wird erst nach aktivem
+  Klick auf "Absenden" angelegt - so sieht man am Ende auf einen Blick,
+  dass jeder Schritt funktioniert hat, statt dass die Häkchen zwischen den
+  Eingabeformularen "durchhuschen".
+- Bugfix: In zwei Zwischen-/Fehlerpfaden (meters, tariffs) wurde der
+  Status-Platzhalter nicht übergeben, wodurch die Häkchen-Liste dort nicht
+  gerendert wurde. Jetzt erhalten alle Formularschritte den Status.
+
 ## 2.5.0
 
 **Einrichtungsassistent zeigt jetzt einen Fortschritts-Status mit Häkchen**
