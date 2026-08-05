@@ -5,6 +5,29 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 2.4.7
+
+**Viertelstündlicher Export wird jetzt korrekt importiert (Aggregation auf
+volle Stunden)**
+
+- Fehlerbild: Beim Import eines viertelstündlichen TraveNetz-Exports brach
+  der Import ab mit "Invalid timestamp: timestamps must be from the top of
+  the hour (minutes and seconds = 0)". Ursache: Home Assistant verlangt für
+  die Langzeit-Statistik Zeitstempel exakt auf der vollen Stunde, der
+  viertelstündliche Export liefert aber :00/:15/:30/:45.
+- Fix: Nach dem Parsen werden alle Energiewerte, die in dieselbe volle
+  Stunde fallen, zu einem Stundenwert zusammengefasst
+  (`_aggregate_to_full_hours`). Damit importiert die Integration den
+  Tages-, den stündlichen UND den viertelstündlichen Export gleichermaßen -
+  für dynamische Stromtarife ist der viertelstündliche Export der
+  relevante.
+- Nachgerechnet gegen einen echten viertelstündlichen Jahres-Export
+  (~24.000 Zeilen -> 6023 Stundenwerte): alle Zeitstempel liegen auf der
+  vollen Stunde, `change` je Monat ergibt den realen Verbrauch (Aug +0,57;
+  Jul +5,23; Feb +1713,63 kWh), die letzte importierte sum ist 0 und der
+  state-Verlauf bleibt streng monoton steigend. Der Tages-Export bleibt
+  unverändert korrekt.
+
 ## 2.4.6
 
 **Import-Statistik: sum-Werte schließen jetzt nahtlos an die Live-Kette an

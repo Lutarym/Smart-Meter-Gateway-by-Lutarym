@@ -1,4 +1,4 @@
-# Integrationsversion: 2.4.6
+# Integrationsversion: 2.4.7
 """Einmaliger Import einer korrigierten historischen Zeitreihe für den
 
 OBIS 1-0:1.8.0 ("Bezug") Sensor dieser Integration - aufgerufen über den

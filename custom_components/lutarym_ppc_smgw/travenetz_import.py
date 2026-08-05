@@ -1,4 +1,4 @@
-# Integrationsversion: 2.4.6
+# Integrationsversion: 2.4.7
 """1:1-Import einer TraveNetz/iMSys-CSV-Exportdatei (stündliche
 
 "Energie bezogen"-Werte) in die Langzeit-Statistik dieser Integration.
@@ -110,7 +110,31 @@ def _parse_travenetz_csv_sync(path: str) -> list[tuple[datetime, float]]:
             "(erwartetes Format: TraveNetz-Kundenportal-Export, siehe Moduldocstring)."
         )
     rows.sort(key=lambda item: item[0])
-    return rows
+    return _aggregate_to_full_hours(rows)
+
+
+def _aggregate_to_full_hours(
+    rows: list[tuple[datetime, float]]
+) -> list[tuple[datetime, float]]:
+    """Fasst alle Energiewerte, die in dieselbe volle Stunde fallen, zu
+
+    EINEM Stundenwert zusammen (Summe der Energie). Home Assistant verlangt
+    für Langzeit-Statistik Zeitstempel exakt auf der vollen Stunde (Minute
+    und Sekunde = 0). Der viertelstündliche TraveNetz-Export liefert aber
+    Zeitstempel auf :00/:15/:30/:45 - ohne diese Aggregation lehnt HA den
+    Import mit "timestamps must be from the top of the hour" ab.
+
+    Der Stunden-Zeitstempel ist der Beginn der jeweiligen Stunde (die
+    Sub-Stunden-Werte dieser Stunde werden ihm zugeordnet). Für bereits
+    stündliche oder tägliche Exporte ist die Funktion unschädlich: Ein
+    Tageswert liegt bereits auf einer vollen Stunde (00:00) und bleibt als
+    einzelner Eintrag dieser Stunde erhalten.
+    """
+    hourly: dict[datetime, float] = {}
+    for ts, energy in rows:
+        hour = ts.replace(minute=0, second=0, microsecond=0)
+        hourly[hour] = hourly.get(hour, 0.0) + energy
+    return sorted(hourly.items())
 
 
 def _median_step(timestamps: list[datetime]) -> timedelta:

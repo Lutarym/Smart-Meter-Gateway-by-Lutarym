@@ -1,4 +1,4 @@
-# Integrationsversion: 2.4.6
+# Integrationsversion: 2.4.7
 """Button-Plattform für die PPC Smart Meter Gateway Integration.
 
 Stellt einen "Gateway neu starten"-Button bereit (action=selftest). In der
