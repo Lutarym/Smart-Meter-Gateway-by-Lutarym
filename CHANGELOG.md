@@ -5,6 +5,19 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 2.5.3
+
+**Aufräumung: Reparatur-Services entfernt**
+
+- Die beiden manuellen Statistik-Reparatur-Services `repair_statistics_reset`
+  und `repair_erroneous_ramp` samt Modul `repair_statistics.py` wurden
+  entfernt. Seit dem sauberen sum-Anschluss des Historien-Imports (2.4.6)
+  entsteht der Statistik-Bruch, den diese Services korrigieren sollten,
+  gar nicht mehr - die Integration arbeitet von Anfang an korrekt, ohne
+  nachträglichen Reparaturmodus.
+- Betrifft nur diese beiden Services; alle übrigen Funktionen (Import,
+  Neukonfiguration, Sensoren, Fortschritts-Assistent) bleiben unverändert.
+
 ## 2.5.2
 
 **Fix: Zusammenfassungs-Seite blieb leer (nur runder Button sichtbar)**

@@ -115,46 +115,6 @@
           "description": "If enabled, only computes and returns a summary (incl. monthly breakdown) without writing anything to the statistics."
         }
       }
-    },
-    "repair_statistics_reset": {
-      "name": "Repair statistics reset",
-      "description": "Precisely corrects a statistics reset (sum dropped to 0 while state kept updating correctly, e.g. after a connection outage) - no estimation, just shifts the already-recorded values from the given point onward by the correct offset (last valid value before it). Recommended: disable the recorder first, re-enable afterwards.",
-      "fields": {
-        "since": {
-          "name": "Since",
-          "description": "The point in time the reset occurred (e.g. the first hour with sum=0 in Developer Tools → Actions → recorder.get_statistics)."
-        },
-        "target_entity": {
-          "name": "Target entity (optional)",
-          "description": "The 1-0:1.8.0 sensor to repair. Auto-detected if left empty - only works automatically when exactly one gateway is configured."
-        },
-        "dry_run": {
-          "name": "Dry run",
-          "description": "If enabled, only computes and returns a summary without writing anything to the statistics."
-        }
-      }
-    },
-    "repair_erroneous_ramp": {
-      "name": "Repair erroneous ramp",
-      "description": "Removes an erroneously inserted linear ramp (counterpart to 'Repair statistics reset' - here the excess is too HIGH instead of too LOW, typically from a bad bridge with a wrong target value). The ramp period is flattened, everything after it is corrected downward by the excess. Recommended: disable the recorder first, re-enable afterwards.",
-      "fields": {
-        "ramp_start": {
-          "name": "Ramp start",
-          "description": "The point in time the erroneous ramp begins (last good value is before this)."
-        },
-        "ramp_end": {
-          "name": "Ramp end",
-          "description": "The point in time values return to normal (small, plausible increments)."
-        },
-        "target_entity": {
-          "name": "Target entity (optional)",
-          "description": "The 1-0:1.8.0 sensor to repair. Auto-detected if left empty - only works automatically when exactly one gateway is configured."
-        },
-        "dry_run": {
-          "name": "Dry run",
-          "description": "If enabled, only computes and returns a summary without writing anything to the statistics."
-        }
-      }
     }
   }
 }
