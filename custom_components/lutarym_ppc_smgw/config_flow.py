@@ -1,4 +1,4 @@
-# Integrationsversion: 2.5.1
+# Integrationsversion: 2.5.2
 """Config Flow für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 from __future__ import annotations
@@ -142,27 +142,35 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
 
         `pending` sind optionale, noch offene Schritte (de, en), die unter
         den erledigten mit ⬜ angezeigt werden.
+
+        Vollständig gegen Fehler abgesichert: Diese Methode darf unter
+        keinen Umständen eine Exception werfen, da sie in jedem
+        Formularschritt aufgerufen wird - ein Fehler hier würde den ganzen
+        Einrichtungsdialog blockieren (leere Seite mit Ladeanzeige).
         """
-        lang = "de"
         try:
-            lang = (self.hass.config.language or "de").split("-")[0].lower()
-        except AttributeError:
             lang = "de"
-        idx = 1 if lang == "en" else 0
+            try:
+                lang = (self.hass.config.language or "de").split("-")[0].lower()
+            except (AttributeError, TypeError):
+                lang = "de"
+            idx = 1 if lang == "en" else 0
 
-        if not self._status_lines and not pending:
+            if not self._status_lines and not pending:
+                return ""
+
+            header = "**Setup progress**" if idx == 1 else "**Einrichtungs-Fortschritt**"
+            lines = [header, ""]
+            for entry in self._status_lines:
+                lines.append(f"✅ {entry[idx]}")
+            if pending:
+                for entry in pending:
+                    lines.append(f"⬜ {entry[idx]}")
+            lines.append("")
+            lines.append("---")
+            return "\n".join(lines)
+        except Exception:  # noqa: BLE001 - Statusanzeige darf den Flow nie brechen
             return ""
-
-        header = "**Setup progress**" if idx == 1 else "**Einrichtungs-Fortschritt**"
-        lines = [header, ""]
-        for entry in self._status_lines:
-            lines.append(f"✅ {entry[idx]}")
-        if pending:
-            for entry in pending:
-                lines.append(f"⬜ {entry[idx]}")
-        lines.append("")
-        lines.append("---")
-        return "\n".join(lines)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -542,9 +550,17 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 },
             )
 
+        # Ein sichtbares Bestätigungsfeld (statt leerem Schema): Ein
+        # feldloses Formular wird vom HA-Frontend nicht zuverlässig mit
+        # Beschreibungstext und Absenden-Button gerendert (es erscheint nur
+        # der runde Button, der Text/Häkchen bleiben leer). Mit einem
+        # optionalen bestätigten-Feld rendert HA das Formular normal - der
+        # Nutzer sieht die Häkchen-Liste und einen klaren Absenden-Button.
         return self.async_show_form(
             step_id="summary",
-            data_schema=vol.Schema({}),
+            data_schema=vol.Schema(
+                {vol.Optional("confirm", default=True): bool}
+            ),
             description_placeholders={
                 "version": VERSION,
                 "status": self._status_block(),

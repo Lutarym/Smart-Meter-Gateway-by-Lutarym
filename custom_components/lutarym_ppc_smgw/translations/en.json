@@ -49,7 +49,10 @@
       },
       "summary": {
         "title": "Finish setup",
-        "description": "{status}\n\nAll steps completed successfully. Click **Submit** to create the integration.\n\nInstalled integration version: {version}"
+        "description": "{status}\n\nAll steps completed successfully. Click **Submit** to create the integration.\n\nInstalled integration version: {version}",
+        "data": {
+          "confirm": "Complete setup"
+        }
       }
     },
     "error": {

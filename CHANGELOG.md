@@ -5,6 +5,19 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 2.5.2
+
+**Fix: Zusammenfassungs-Seite blieb leer (nur runder Button sichtbar)**
+
+- Die in 2.5.1 eingeführte Abschluss-Seite nutzte ein feldloses Formular
+  (leeres Schema). Das HA-Frontend rendert ein Formular ohne Eingabefelder
+  nicht zuverlässig mit Beschreibungstext und Absenden-Button - es erschien
+  nur der runde Button, die Häkchen-Liste blieb unsichtbar. (Die
+  Einrichtung wurde technisch dennoch korrekt abgeschlossen.)
+- Fix: Die Seite hat jetzt ein sichtbares Bestätigungsfeld. Dadurch
+  rendert HA die vollständige Häkchen-Liste UND einen klaren Absenden-
+  Button wie vorgesehen.
+
 ## 2.5.1
 
 **Abschließende Zusammenfassungs-Seite im Einrichtungsassistenten**

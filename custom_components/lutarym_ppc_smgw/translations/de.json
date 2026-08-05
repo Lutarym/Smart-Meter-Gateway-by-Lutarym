@@ -49,7 +49,10 @@
       },
       "summary": {
         "title": "Einrichtung abschließen",
-        "description": "{status}\n\nAlle Schritte wurden erfolgreich durchlaufen. Klicke auf **Absenden**, um die Integration anzulegen.\n\nInstallierte Integrationsversion: {version}"
+        "description": "{status}\n\nAlle Schritte wurden erfolgreich durchlaufen. Klicke auf **Absenden**, um die Integration anzulegen.\n\nInstallierte Integrationsversion: {version}",
+        "data": {
+          "confirm": "Einrichtung abschließen"
+        }
       }
     },
     "error": {
