@@ -1,22 +1,50 @@
 # PPC Smart Meter Gateway (iMSys) by Lutarym
 
-Home-Assistant-Integration für das **PPC Smart Meter Gateway** (LTE SMGW),
-ausgelesen über die lokale **HAN-Schnittstelle**. Legt für jeden am
-Gateway gefundenen Zähler-Messwert (z.B. OBIS `1-0:1.8.0` "Bezug",
-`1-0:2.8.0` "Einspeisung") sowie für konfigurierte Auswertungsprofile
-eigene Home-Assistant-Entitäten an.
+Diese Home-Assistant-Integration liest ein **PPC Smart Meter Gateway**
+(LTE SMGW) lokal über seine **HAN-Schnittstelle** aus und bringt die
+Messwerte deines intelligenten Stromzählers direkt in Home Assistant.
 
-Ab Version **1.13.0** kann zusätzlich die **historische Verbrauchsdaten**
-deines Netzbetreibers importiert werden (z.B. von TraveNetz AG), und ab
-Version **1.14.0** stehen Werkzeuge zur Reparatur fehlerhafter
-Langzeit-Statistiken direkt über Home Assistant bereit.
+Dabei werden **alle Messwerte und Auswertungsprofile ausgelesen, die das
+Gateway bereitstellt**, und jeder einzelne davon bekommt seine eigene
+Home-Assistant-Entität. Dazu gehören zum Beispiel der Bezug
+(OBIS `1-0:1.8.0`), die Einspeisung (`1-0:2.8.0`) und die vom
+Messstellenbetreiber freigeschalteten Auswertungsprofile. Es wird also
+nichts vorab ausgewählt oder herausgefiltert: Du bekommst alles, was dein
+Gateway hergibt, und entscheidest in Home Assistant selbst, was du davon
+nutzen möchtest. Die wichtigsten Messwerte sind sofort aktiv, während
+seltener benötigte Metadaten-Entitäten zwar angelegt, aber zunächst
+deaktiviert bleiben, sodass du sie bei Bedarf mit einem Klick einschalten
+kannst.
+
+Darüber hinaus kannst du die **historischen Verbrauchsdaten** deines
+Netzbetreibers nachträglich importieren, etwa aus dem Kundenportal der
+TraveNetz AG. Der Import schließt nahtlos an die laufende
+Home-Assistant-Statistik an, sodass keine spätere Reparatur der Werte
+nötig ist.
+
+> **Hardware-Kompatibilität**
+>
+> Diese Integration wurde ausschließlich mit einem Gateway von PPC (Power
+> Plus Communications AG) entwickelt und getestet, wie es beispielsweise
+> die TraveNetz AG einsetzt. Da das BSI mit der Technischen Richtlinie
+> [TR-03109-1](https://www.bsi.bund.de/dok/7614914) eine gemeinsame
+> HAN-Schnittstelle für alle intelligenten Messsysteme vorschreibt, ist es
+> durchaus möglich, dass die Integration auch mit Gateways anderer
+> Hersteller zusammenarbeitet. Garantieren lässt sich das allerdings
+> nicht: Die Richtlinie vereinheitlicht vor allem die Transport- und
+> Sicherheitsebene (TLS, HTTP und die Digest-Authentifizierung), während
+> der konkrete Ablauf hinter der Weboberfläche des Geräts von Hersteller zu
+> Hersteller abweichen kann und hier nur für PPC-Geräte umgesetzt wurde.
+> Wenn du ein intelligentes Messsystem eines anderen Herstellers besitzt,
+> probiere die Integration gerne aus und [gib mir
+> Rückmeldung](#hilfe--kontakt). Eine Gewähr, dass alles zuverlässig läuft,
+> kann ich dir aber nicht geben.
 
 ## Inhalt
 
 - [Installation](#installation)
 - [Einrichtung](#einrichtung)
 - [Historische Daten importieren (CSV-Import)](#historische-daten-importieren-csv-import)
-- [Statistik-Reparatur über Entwicklerwerkzeuge](#statistik-reparatur-über-entwicklerwerkzeuge)
 - [Eingebauter Schutz vor Anomalien](#eingebauter-schutz-vor-anomalien)
 - [Service-Referenz](#service-referenz)
 - [Fehlerbehebung](#fehlerbehebung)
@@ -25,109 +53,205 @@ Langzeit-Statistiken direkt über Home Assistant bereit.
 
 ### Über HACS
 
-1. HACS → Integrationen → **⋮** → Benutzerdefinierte Repositories
-2. URL dieses Repositories eintragen, Kategorie **Integration**
-3. "PPC Smart Meter Gateway (iMSys) by Lutarym" installieren
-4. Home Assistant **komplett neu starten**
+1. Öffne in HACS unter Integrationen über das Menü (**⋮**) die
+   benutzerdefinierten Repositories.
+2. Trage die URL dieses Repositories ein und wähle als Kategorie
+   **Integration**.
+3. Installiere anschließend "PPC Smart Meter Gateway (iMSys) by Lutarym".
+4. Starte Home Assistant danach **komplett neu**.
 
 ### Manuell
 
-Den kompletten Inhalt von `custom_components/lutarym_ppc_smgw/` in dein
-`config/custom_components/lutarym_ppc_smgw/`-Verzeichnis kopieren,
-danach Home Assistant neu starten.
+Kopiere den gesamten Inhalt von `custom_components/lutarym_ppc_smgw/` in
+das Verzeichnis `config/custom_components/lutarym_ppc_smgw/` deiner
+Home-Assistant-Installation und starte Home Assistant anschließend neu.
 
 ## Einrichtung
 
-Einstellungen → Geräte & Dienste → Integration hinzufügen → "PPC Smart
-Meter Gateway" suchen. Der Assistent führt durch:
+Gehe zu Einstellungen, dann zu Geräte & Dienste, und füge dort über
+"Integration hinzufügen" die "PPC Smart Meter Gateway"-Integration hinzu.
+Der Assistent führt dich durch die folgenden Schritte:
 
-1. **Host/IP-Adresse** des Gateways (wird auf Erreichbarkeit über Port
-   443 geprüft)
-2. **HAN-Zugangsdaten** (von deinem Messstellenbetreiber erhalten)
-3. **Zähler auswählen**, die als Sensoren angelegt werden sollen
-4. **Auswertungsprofile auswählen** (optional, z.B. "Bezug 15-Minuten")
-5. **Historische Daten importieren** (optional, siehe nächster Abschnitt)
+1. Zuerst gibst du die **Host- bzw. IP-Adresse** deines Gateways an. Die
+   Standardvorgabe ist `172.20.0.1`, und die Erreichbarkeit wird über Port
+   443 geprüft.
+2. Danach folgen die **HAN-Zugangsdaten**, die du von deinem
+   Messstellenbetreiber erhalten hast.
+3. Anschließend **wählst du die Zähler aus**, die als Sensoren angelegt
+   werden sollen.
+4. Optional kannst du zusätzlich **Auswertungsprofile auswählen**.
+5. Zum Schluss lassen sich optional **historische Daten importieren** (mehr
+   dazu im nächsten Abschnitt).
+
+> **⚠️ Fehlen dir Messwerte wie die Einspeisung (`2.8.0`)? Dann müssen sie
+> beim Netzbetreiber freigeschaltet werden.**
+>
+> Das Gateway liefert über die HAN-Schnittstelle nur jene Messwerte und
+> Auswertungsprofile, die dein Messstellen- oder Netzbetreiber dafür
+> freigeschaltet hat. Häufig ist standardmäßig nur der Bezug
+> (`1-0:1.8.0`) aktiv, während die Einspeisung (`1-0:2.8.0`) oder weitere
+> Werte fehlen, selbst wenn dein Zähler sie technisch längst erfasst.
+> Wenn erwartete Werte bei "Zähler auswählen" oder bei den
+> Auswertungsprofilen also gar nicht erst auftauchen, liegt das nicht an
+> dieser Integration, sondern an der fehlenden Freischaltung. Wende dich in
+> diesem Fall an deinen Netzbetreiber und bitte ausdrücklich darum, die
+> gewünschten OBIS-Kennzahlen für die HAN-Schnittstelle freizuschalten
+> (etwa `1-0:2.8.0` für die Einspeisung). Sobald das erledigt ist,
+> erscheinen die Werte beim nächsten Abruf automatisch.
+
+### Welche IP-Adresse hat mein Gateway?
+
+Eine deutschlandweit einheitliche HAN-IP gibt es leider nicht, denn sie
+hängt vom Messstellenbetreiber und der Konfiguration des Gateways ab.
+Folgende Anhaltspunkte helfen weiter:
+
+- Die **Werkseinstellung bei PPC-Geräten** lautet laut
+  PPC-Verbraucherhandbuch `192.168.1.200`.
+- Die **TraveNetz AG** nutzt `172.20.0.1`, was zugleich die Standardvorgabe
+  dieser Integration ist und mit dieser Adresse entwickelt und getestet
+  wurde.
+- **Bei anderen Betreibern** findest du die HAN-IP meist in den
+  Zugangsunterlagen, die du zusammen mit den Zugangsdaten bekommen hast.
+  Ist im Gateway DHCP aktiviert, vergibt dein Router automatisch eine
+  Adresse; du kannst dann in der DHCP-Client-Liste deines Routers
+  nachsehen, welche IP das Gateway erhalten hat. Bei manchen Gateways ist
+  der DHCP-Server jedoch deaktiviert, sodass die HAN-Schnittstelle nur
+  unter der fest vom Betreiber vorgegebenen Adresse antwortet.
+
+Passt die Standardvorgabe nicht, trägst du im ersten Schritt einfach die
+IP-Adresse ein, die dir dein Messstellenbetreiber genannt hat.
+
+Am Ende der Einrichtung zeigt dir der Assistent eine Übersicht mit dem
+Ergebnis jedes Schritts. Das **Abrufintervall** kannst du danach jederzeit
+in den Optionen der Integration ändern. Voreingestellt sind 15 Minuten,
+was dem Ausleseintervall des Gateways entspricht; kürzer als 5 Minuten geht
+allerdings nicht.
 
 ## Historische Daten importieren (CSV-Import)
 
-Da das Gateway erst ab dem Zeitpunkt der Ersteinrichtung Daten
-aufzeichnet, bleibt die Home-Assistant-Statistik ohne Import auf diesen
-Zeitraum beschränkt. Über einen **1:1-CSV-Import** lässt sich die
-komplette Historie seit Zähler-Einbau nachtragen — mit den **echten**
-Messwerten deines Netzbetreibers, ohne Schätzung oder Skalierung.
+Das Gateway wird erst ab dem Zeitpunkt der Ersteinrichtung von Home
+Assistant ausgelesen, weshalb die Statistik ohne Import auf diesen Zeitraum
+beschränkt bleibt. Mit einem **CSV-Import** trägst du die komplette
+Historie seit dem Zähler-Einbau nach, und zwar mit den echten Messwerten
+deines Netzbetreibers, ganz ohne Schätzung oder Skalierung.
 
 ### CSV von deinem Netzbetreiber besorgen
 
-Bei TraveNetz AG (und vermutlich bei weiteren Netzbetreibern mit
-ähnlichem Kundenportal): im Online-Kundenportal die **stündlichen**
-Verbrauchswerte für OBIS `1-0:1.8.0` ("Energie bezogen") als CSV
-exportieren, für den gewünschten Zeitraum (idealerweise ab Zähler-Einbau
-bis heute).
+Bei der TraveNetz AG (und vermutlich bei weiteren Netzbetreibern mit einem
+ähnlichen Kundenportal) exportierst du im Online-Kundenportal die
+Verbrauchswerte für OBIS `1-0:1.8.0` ("Energie bezogen") als CSV-Datei, am
+besten für den gesamten Zeitraum vom Zähler-Einbau bis heute. Unterstützt
+werden sowohl der tägliche als auch der viertelstündliche Export; für
+dynamische Stromtarife ist dabei der viertelstündliche Export der
+passende.
+
+> **Wichtig: Die CSV sollte möglichst aktuell sein.**
+>
+> Lade die Datei unmittelbar vor dem Import aus dem Kundenportal herunter,
+> sodass sie bis zur aktuellsten verfügbaren Stunde reicht und idealerweise
+> höchstens eine Stunde alt ist. Der Grund liegt darin, dass der
+> importierte Verlauf an den aktuellen Zählerstand deines Gateways
+> angehängt wird. Klafft zwischen dem Ende der CSV und dem jetzigen
+> Zeitpunkt eine große Lücke, weil die Datei etwa schon Tage alt ist,
+> passen die importierte Historie und die laufende Messung nicht mehr sauber
+> zusammen. Besorge dir deshalb erst die frische CSV und importiere sie dann
+> sofort.
 
 ### Erwartetes CSV-Format
 
-Die Integration erwartet **exakt** das Exportformat des TraveNetz-
-Kundenportals:
+Die Integration erwartet das Exportformat des TraveNetz-Kundenportals mit
+den folgenden Eigenschaften:
 
-- **Kodierung**: UTF-8 (mit oder ohne BOM)
-- **Trennzeichen**: Semikolon (`;`)
-- **Dezimaltrennzeichen**: Komma (deutsches Format, z.B. `4,289460`)
-- **Erste zwei Zeilen**: Kopfzeilen, werden automatisch übersprungen
-- **Ab Zeile 3**: eine Datenzeile pro Stunde, Spalten:
+- Als **Kodierung** UTF-8, mit oder ohne BOM.
+- Als **Trennzeichen** das Semikolon (`;`).
+- Als **Dezimaltrennzeichen** das Komma im deutschen Format, etwa
+  `0,706622`.
+- Die **ersten beiden Zeilen** sind Kopfzeilen und werden automatisch
+  übersprungen.
+- **Ab der dritten Zeile** folgt eine Datenzeile pro Messintervall mit
+  diesen Spalten:
 
   | Spalte | Beispielinhalt | Bedeutung |
   |---|---|---|
-  | 1 | `27.11.2025 - 00:00:00` | Beginn der Stunde, **deutsche Lokalzeit** (`DD.MM.YYYY - HH:MM:SS`) |
-  | 2 | `27.11.2025 - 01:00:00` | Ende der Stunde (wird nicht ausgewertet) |
-  | 3 | `0,489460` | Messwert dieser Stunde (Komma-Dezimal) |
-  | 4 | `kW` | Einheit lt. Export - wird trotz Beschriftung als **kWh dieser Stunde** interpretiert (bei 1-Stunden-Intervallen numerisch identisch) |
-  | 5 | `W` | Status (`W` = valide, `-` als Wert = fehlende Messung) |
+  | 1 | `24.11.2025 - 00:00:00` | Beginn des Intervalls in deutscher Lokalzeit (`DD.MM.YYYY - HH:MM:SS`) |
+  | 2 | `24.11.2025 - 00:15:00` | Ende des Intervalls, woraus sich die Intervalldauer ergibt |
+  | 3 | `0,706622` | mittlere Leistung dieses Intervalls in kW (Komma als Dezimaltrennzeichen) |
+  | 4 | `kW` | Einheit laut Export |
+  | 5 | `E` | Status-Kennzeichen des Netzbetreibers |
 
-  Beispielzeile:
+  Eine Beispielzeile aus dem viertelstündlichen Export sieht so aus:
+
   ```
-  "27.11.2025 - 00:00:00";"27.11.2025 - 01:00:00";"0,489460";"kW";"W";
+  "24.11.2025 - 00:00:00";"24.11.2025 - 00:15:00";"0,706622";"kW";"E";
   ```
 
-- **Fehlende Stunden**: Zeilen mit `-` statt einem Zahlenwert (Status
-  meist `F`) werden als Lücke erkannt. Einzelne fehlende Stunden
-  **innerhalb** des Datenbereichs werden automatisch linear zwischen den
-  beiden benachbarten echten Werten aufgefüllt. Am Anfang/Ende
-  fehlende Stunden (vor der ersten bzw. nach der letzten echten Messung)
-  werden **nicht** erfunden.
-- **Zeitumstellung**: wird korrekt berücksichtigt (Europe/Berlin,
-  inklusive Sommer-/Winterzeit-Wechsel).
+Ein wichtiger Hinweis zu Spalte 3: Dort steht die mittlere **Leistung in
+kW**, nicht direkt die Energiemenge, auch wenn der Export das manchmal
+etwas irreführend darstellt. Die Integration rechnet diesen Wert selbst
+korrekt in kWh um, sodass du an der CSV nichts anpassen musst. Sowohl der
+viertelstündliche als auch der tägliche Export werden dabei zuverlässig
+verarbeitet.
 
-Andere CSV-Formate (z.B. mit Komma statt Semikolon als Trennzeichen,
-englischem Zahlenformat oder anderer Spaltenreihenfolge) werden
-**nicht** unterstützt und führen zu einer Fehlermeldung beim Import.
+Fehlende Intervalle erkennt die Integration an einem `-` anstelle eines
+Zahlenwerts. Fehlt ein einzelnes Intervall mitten im Datenbereich, wird es
+automatisch linear zwischen den beiden benachbarten echten Werten
+aufgefüllt. Fehlen dagegen Intervalle ganz am Anfang oder Ende, also vor
+der ersten oder nach der letzten echten Messung, werden diese Werte nicht
+erfunden. Die Zeitumstellung wird korrekt berücksichtigt, einschließlich
+des Wechsels zwischen Sommer- und Winterzeit in der Zeitzone
+Europe/Berlin.
+
+Andere CSV-Formate, etwa mit einem Komma als Trennzeichen, mit englischem
+Zahlenformat oder mit einer anderen Spaltenreihenfolge, werden nicht
+unterstützt und führen beim Import zu einer Fehlermeldung.
+
+### Was beim Import passiert
+
+Damit die importierte Historie exakt zum tatsächlichen Zählerstand passt,
+geht der Import in drei Schritten vor:
+
+1. Zuerst wird der **aktuelle Zählerstand** deines Gateways ausgelesen
+   (OBIS `1-0:1.8.0`, "Energie bezogen").
+2. Dieser Wert wird auf die **letzte Zeile deiner CSV** gelegt, also auf
+   den jüngsten Zeitpunkt in der Datei.
+3. Von dort aus werden die CSV-Werte **rückwärts in die Vergangenheit**
+   eingetragen, indem Stunde für Stunde der jeweilige Verbrauch abgezogen
+   wird, bis der Anfang der Datei erreicht ist.
+
+Auf diese Weise stimmt das Ende der importierten Reihe garantiert mit dem
+echten aktuellen Zählerstand überein, und der Verlauf geht lückenlos in die
+laufende Aufzeichnung über.
+
+Genau deshalb sollte die CSV möglichst frisch sein, wie oben bereits
+erwähnt: Je näher die letzte CSV-Zeile am aktuellen Zeitpunkt liegt, desto
+genauer passt der importierte Verlauf zum realen Zählerstand. Ist die Datei
+dagegen schon mehrere Stunden oder Tage alt, wird der aktuelle Wert auf
+einen zu weit zurückliegenden Zeitpunkt gelegt, und die jüngste Zeit fehlt
+im Import.
 
 ### Import beim Einrichten
 
 Im letzten Schritt des Einrichtungsassistenten ("Historische Daten
-importieren"):
+importieren") stehen dir zwei Felder zur Verfügung. Über den
+**CSV-Datei-Upload** lädst du die exportierte Datei hoch. Beim **Wert an
+der ersten Zeile (kWh)** trägst du optional einen Startzählerstand ein,
+falls deine CSV nicht am Tag des Zähler-Einbaus beginnt.
 
-- **CSV-Datei-Upload**: die exportierte Datei per Datei-Auswahl
-  hochladen
-- **Wert an der ersten Zeile (kWh)**: der Zählerstand, der am
-  allerersten Zeitpunkt der CSV galt.
-  - Startet die CSV genau am Tag des Zähler-Einbaus → **0** eintragen
-    (oder leer lassen, Standardwert ist 0)
-  - Deckt die CSV nur einen Teil-Zeitraum ab (z.B. weil der Zähler
-    schon vorher existierte) → den tatsächlichen Zählerstand zum
-    CSV-Startzeitpunkt eintragen
-
-Beide Felder sind optional - bleibt der Datei-Upload leer, wird kein
-Import durchgeführt, die Integration wird ganz normal ohne historische
-Daten eingerichtet.
-
-Der Import läuft automatisch **nach** dem Abschluss der Einrichtung
-(sobald die Entities existieren) und meldet das Ergebnis als
+Lässt du den Datei-Upload leer, findet kein Import statt, und die
+Integration wird ganz normal ohne historische Daten eingerichtet.
+Andernfalls startet der Import automatisch nach Abschluss der Einrichtung,
+sobald die Entitäten existieren, und meldet das Ergebnis als
 Benachrichtigung in Home Assistant.
+
+Damit der importierte Verlauf sauber an die laufende Statistik anschließt,
+richtest du die Integration am besten zuerst ein, wartest einen ersten
+Live-Abruf ab und importierst erst danach die CSV.
 
 ### Import nachträglich (bestehende Installation)
 
-Ohne die Integration neu einrichten zu müssen, über **Entwicklerwerkzeuge
-→ Aktionen** den Service `lutarym_ppc_smgw.import_history` aufrufen:
+Du kannst den Import auch später auslösen, ohne die Integration neu
+einzurichten. Rufe dazu unter Entwicklerwerkzeuge und dann Aktionen den
+Service `lutarym_ppc_smgw.import_history` auf:
 
 ```yaml
 action: lutarym_ppc_smgw.import_history
@@ -136,193 +260,123 @@ data:
   start_value: 0
 ```
 
-Die CSV-Datei muss dafür vorher auf den Home-Assistant-Host gelegt
-werden, z.B. über den File-Editor-Add-on direkt nach `/config/` (der
-Pfad im Beispiel geht davon aus, dass die Datei dort unter dem Namen
-`imsys_export.csv` liegt - Namen entsprechend anpassen).
+Dafür muss die CSV-Datei vorher auf dem Home-Assistant-Host liegen, zum
+Beispiel über das File-Editor-Add-on im Verzeichnis `/config/`. Pfad und
+Dateiname im Beispiel passt du entsprechend an.
 
-`target_entity` kann weggelassen werden, wenn genau ein Gateway
-konfiguriert ist (wird dann automatisch gefunden) - bei mehreren
-Gateways muss die Ziel-Entity explizit angegeben werden, z.B.
-`sensor.ppc_smgw_1_8_0`.
-
-Ein erneuter Aufruf **überschreibt** einen vorherigen Import vollständig
-(für den abgedeckten Zeitraum) - nützlich, um z.B. eine aktuellere
-CSV-Datei mit mehr Tagen einzuspielen.
-
-**Empfehlung vor größeren Importen**: kurz den Recorder pausieren
-(Entwicklerwerkzeuge → Aktionen → `Recorder: Deaktivieren`), nach dem
-Import wieder aktivieren (`Recorder: Aktivieren`) - nicht zwingend
-nötig, aber sicherer bei sehr großen Datenmengen.
-
-## Statistik-Reparatur über Entwicklerwerkzeuge
-
-Home Assistants interne Langzeit-Statistik-Kompilierung kann in seltenen
-Fällen ihren Bezugspunkt verlieren (z.B. nach einer Verbindungsstörung
-zum Gateway) - sichtbar als plötzlicher Sprung auf 0, eine unrealistisch
-hohe Rampe, oder sogar negative Werte in der Statistik, **obwohl** der
-angezeigte Live-Wert der Entity die ganze Zeit korrekt war. Zwei Services
-helfen, das gezielt zu reparieren, **ohne** einen kompletten Neu-Import.
-
-> **Version 1.18.0 bis 2.1.x** schrieben ihre Statistik-Werte zusätzlich
-> selbst direkt (statt sich auf Home Assistants automatische Ableitung zu
-> verlassen). Das kollidierte wiederholt mit Home Assistants eigener,
-> paralleler Kompilierung derselben Stunde und wurde in **Version 2.4.0**
-> wieder entfernt - siehe Abschnitt "Eingebauter Schutz vor Anomalien"
-> unten für den aktuellen Mechanismus. Die folgenden Services bleiben
-> trotzdem verfügbar, für den Fall, dass doch mal etwas repariert werden
-> muss (z.B. für Zeiträume vor Version 1.18.0 oder nach einem längeren
-> Ausfall, der über die automatische Verbindungstoleranz hinausgeht).
-
-### Schritt 1: Problem erkennen
-
-Entwicklerwerkzeuge → Aktionen → `recorder.get_statistics` (YAML-Modus),
-um die stündlichen Werte um den vermuteten Zeitpunkt herum zu prüfen:
+Bevor du den echten Import startest, kannst du ihn mit `dry_run: true`
+gefahrlos durchrechnen lassen. In diesem Modus ermittelt der Service das
+komplette Ergebnis und meldet, was er schreiben würde, also die Anzahl der
+Stundenpunkte, die Aufschlüsselung nach Monaten sowie den errechneten
+Start- und Endwert, ohne dabei tatsächlich etwas in die Statistik zu
+schreiben. So prüfst du Format und Größenordnung vorab:
 
 ```yaml
-action: recorder.get_statistics
+action: lutarym_ppc_smgw.import_history
 data:
-  statistic_ids:
-    - sensor.ppc_smgw_1_8_0
-  start_time: "2026-07-20 00:00:00"
-  end_time: "2026-07-23 00:00:00"
-  period: hour
-  types:
-    - sum
-    - state
-response_variable: result
+  csv_path: /config/imsys_export.csv
+  dry_run: true
 ```
 
-Nach dem Ausführen erscheint das Ergebnis im "Antwort"-Bereich unten im
-Fenster. Zwei Muster sind zu unterscheiden:
+Die Angabe `target_entity` kannst du weglassen, wenn nur ein einziges
+Gateway konfiguriert ist, denn dann wird die Ziel-Entität automatisch
+gefunden. Bei mehreren Gateways musst du sie dagegen ausdrücklich angeben,
+etwa `sensor.ppc_smgw_1_8_0`.
 
-**Muster A - Reset auf 0 (oder allgemein: Wert zu niedrig)**: `sum`
-fällt an einer Stelle plötzlich stark ab (z.B. auf 0) und zählt von dort
-an mit realistisch kleinen Schritten weiter, während `state` unauffällig
-bleibt.
-
-**Muster B - fälschliche Rampe (Wert zu hoch)**: `sum`/`state` steigen
-über mehrere Stunden mit demselben, unrealistisch großen Betrag pro
-Stunde an, bis ein deutlich zu hohes Plateau erreicht wird, danach laufen
-die Werte wieder normal weiter.
-
-### Schritt 2a: Muster A reparieren
-
-```yaml
-action: lutarym_ppc_smgw.repair_statistics_reset
-data:
-  target_entity: sensor.ppc_smgw_1_8_0
-  since: "2026-07-21 09:00:00"
-```
-
-`since` = der Zeitpunkt der **ersten** auffällig niedrigen Stunde. Der
-Service ermittelt automatisch den letzten gültigen Wert davor, füllt eine
-etwaige echte Zeitlücke davor linear auf, und verschiebt alle bereits
-vorhandenen Punkte ab `since` um den korrekten Offset nach oben.
-
-### Schritt 2b: Muster B reparieren
-
-```yaml
-action: lutarym_ppc_smgw.repair_erroneous_ramp
-data:
-  target_entity: sensor.ppc_smgw_1_8_0
-  ramp_start: "2026-07-20 22:00:00"
-  ramp_end: "2026-07-21 10:00:00"
-```
-
-`ramp_start` = letzte normale Stunde **vor** dem Anstieg + 1 Stunde (also
-die erste auffällige Stunde). `ramp_end` = erste Stunde, in der die
-Werte wieder normal (kleine, plausible Schritte) weiterlaufen. Der
-Rampen-Zeitraum wird flach aufgefüllt, alle Werte ab `ramp_end` werden
-um den ermittelten Überschuss nach unten korrigiert.
-
-### Vor der Reparatur: Recorder pausieren
-
-Für beide Services empfohlen, damit während der Korrektur kein neuer,
-live geschriebener Punkt dazwischenfunkt:
-
-1. Entwicklerwerkzeuge → Aktionen → `Recorder: Deaktivieren` ausführen
-2. Reparatur-Service ausführen
-3. Entwicklerwerkzeuge → Aktionen → `Recorder: Aktivieren` ausführen
-
-### Ergebnis prüfen
-
-Beide Services zeigen als Antwort eine Zusammenfassung (Anzahl
-korrigierter Punkte, ermittelter Offset/Überschuss, Wert vor/nach der
-Reparatur) - zusätzlich lässt sich mit der `recorder.get_statistics`-
-Abfrage von Schritt 1 gegenprüfen, ob der Verlauf jetzt lückenlos und
-plausibel ist.
-
-Mit `dry_run: true` lässt sich jeder der beiden Services testweise
-ausführen, ohne dass etwas geschrieben wird - zeigt nur, was passieren
-würde.
+Rufst du den Import erneut auf, überschreibt er einen vorherigen Import für
+den abgedeckten Zeitraum vollständig. Das ist praktisch, wenn du
+beispielsweise eine aktuellere CSV mit mehr Tagen einspielen möchtest.
 
 ## Eingebauter Schutz vor Anomalien
 
-Statt Statistik-Werte selbst zu schreiben (siehe Hinweis oben), verlässt
-sich die Integration seit **Version 2.4.0** bewusst auf Home Assistants
-eigene Langzeit-Statistik-Kompilierung für `state_class:
-total_increasing`-Sensoren - die erkennt einen fallenden Rohwert
-automatisch als Zähler-Reset und führt `sum` trotzdem korrekt fort, ganz
-ohne manuelles Zutun. Zwei Mechanismen sorgen dafür, dass diese
-Kompilierung erst gar keine schlechten Ausgangsdaten bekommt:
+Für Sensoren mit `state_class: total_increasing` verlässt sich die
+Integration auf die eigene Langzeit-Statistik von Home Assistant. Diese
+erkennt einen fallenden Rohwert automatisch als Zähler-Reset und führt die
+Summe trotzdem korrekt fort. Zwei Mechanismen sorgen dafür, dass diese
+Statistik erst gar keine fehlerhaften Ausgangsdaten erhält.
 
-- **Verbindungstoleranz** (`coordinator.py`): bis zu drei
-  aufeinanderfolgende fehlgeschlagene Auslesezyklen (Standard-Intervall:
-  15 Minuten) führen NICHT dazu, dass die Entity als "nicht verfügbar"
-  markiert wird - der letzte bekannte Wert bleibt aktiv sichtbar. Grund:
-  eine kurzzeitig "nicht verfügbare" Entity scheint Home Assistants
-  Kompilierung als möglichen Reset zu werten und lässt `sum` auf 0
-  zurückfallen, obwohl gar keine echte Störung vorlag - erst bei einem
-  wiederholten, anhaltenden Ausfall wird die Entity wie gewohnt nicht
-  verfügbar.
-- **Plausibilitätsprüfung** (`coordinator.py`): einzelne, offensichtlich
-  unsinnige Messwerte (negativ, Rücksprung, unplausibler Sprung von mehr
-  als 20 kWh in einem Zyklus) werden verworfen, bevor sie überhaupt in
-  die Entity bzw. Statistik einfließen - der letzte bekannte plausible
-  Wert bleibt stattdessen stehen, der echte Wert wird beim nächsten
-  plausiblen Zyklus ganz normal übernommen.
+Der erste ist eine **Verbindungstoleranz** im Coordinator: Bis zu drei
+aufeinanderfolgende fehlgeschlagene Auslesezyklen führen nicht dazu, dass
+die Entität als "nicht verfügbar" gilt, sondern der letzte bekannte Wert
+bleibt aktiv. Das ist wichtig, weil eine kurzzeitig nicht verfügbare
+Entität von Home Assistant fälschlich als Reset gewertet werden kann. Erst
+wenn der Ausfall länger anhält, wird die Entität wie gewohnt als nicht
+verfügbar markiert.
 
-Für echte Lücken (z.B. durch einen längeren Ausfall oder einen
-Home-Assistant-Neustart über mehrere Stunden hinweg, also über die
-Verbindungstoleranz hinaus) bleibt ein CSV-Import (siehe oben) der
-genauere Weg, da er echte Messwerte statt einer Schätzung nutzt.
+Der zweite Mechanismus ist eine **Plausibilitätsprüfung**, ebenfalls im
+Coordinator. Offensichtlich unsinnige Messwerte, also negative Werte,
+R�cksprünge oder ein unplausibler Sprung von mehr als 20 kWh innerhalb
+eines Zyklus, werden verworfen, bevor sie in die Entität oder die Statistik
+gelangen. Stattdessen bleibt der letzte bekannte plausible Wert stehen, und
+der echte Wert wird beim nächsten plausiblen Zyklus übernommen. Nach einem
+Import oder einem Neustart wird der Referenzwert für diese Prüfung aus dem
+importierten Endstand beziehungsweise dem letzten bekannten Zustand
+rekonstruiert, damit schon der allererste Abruf abgesichert ist.
+
+Für echte Datenlücken, wie sie etwa nach einem längeren Ausfall jenseits
+der Verbindungstoleranz entstehen, bleibt der CSV-Import der genauere Weg,
+weil er echte Messwerte statt einer Schätzung verwendet.
 
 ## Service-Referenz
 
-| Service | Zweck | Pflichtfelder |
+| Service | Zweck | Wichtigste Felder |
 |---|---|---|
-| `lutarym_ppc_smgw.import_history` | Historische CSV-Daten importieren (oder ältere skalierte Quell-Entity-Variante, siehe Quellcode-Kommentare) | `csv_path` |
-| `lutarym_ppc_smgw.repair_statistics_reset` | Reset-auf-0-Fehler in bestehender Statistik reparieren | `since` |
-| `lutarym_ppc_smgw.repair_erroneous_ramp` | Fälschliche Rampe in bestehender Statistik reparieren | `ramp_start`, `ramp_end` |
+| `lutarym_ppc_smgw.import_history` | Historische Verbrauchsdaten importieren | `csv_path`, `start_value` |
 
-Alle drei Services unterstützen `target_entity` (optional, wird bei genau
-einem Gateway automatisch ermittelt) und `dry_run` (optional, Standard
-`false`) - vollständige Feldbeschreibungen erscheinen direkt im
-Home-Assistant-Formular unter Entwicklerwerkzeuge → Aktionen.
+Alle Felder dieses Service sind optional:
+
+- `csv_path` gibt den Pfad zur TraveNetz-CSV auf dem Home-Assistant-Host
+  an. Das ist der übliche Weg.
+- `start_value` legt den Startzählerstand in kWh für die erste CSV-Zeile
+  fest. Voreingestellt ist 0.
+- `target_entity` bestimmt die Ziel-Entität und wird bei genau einem
+  Gateway automatisch ermittelt.
+- `dry_run` löst einen reinen Testlauf aus, ohne etwas zu schreiben.
+  Voreingestellt ist `false`.
+- `source_entity`, `start_date` und `monthly_kwh` dienen einer
+  alternativen Importquelle aus einer bereits vorhandenen Entität mit
+  optionaler monatlicher Skalierung. Das ist ein Sonderfall, den du für den
+  normalen CSV-Import nicht benötigst.
+
+Die vollständigen Feldbeschreibungen erscheinen direkt im
+Home-Assistant-Formular unter Entwicklerwerkzeuge und Aktionen.
 
 ## Fehlerbehebung
 
-**CSV-Import schlägt fehl / "keine verwertbaren Datenzeilen"**: Format
-prüfen (siehe [oben](#erwartetes-csv-format)) - andere Netzbetreiber-
-Portale können ein abweichendes Exportformat verwenden, das nicht
-unterstützt wird.
+**Ein erwarteter Messwert fehlt, zum Beispiel die Einspeisung (`2.8.0`).**
+In aller Regel ist dieser Wert vom Netzbetreiber nicht für die
+HAN-Schnittstelle freigeschaltet, es handelt sich also nicht um einen
+Fehler der Integration. Wie du die Freischaltung anfragst, steht im
+hervorgehobenen Hinweis im Abschnitt [Einrichtung](#einrichtung).
 
-**Nach der Einrichtung mehrere Entities mit ähnlichem Namen** (z.B.
-`sensor.ppc_smgw_..._1_8_0` und eine umbenannte Variante): kann bei
-mehrfacher Neu-Einrichtung des Geräts entstehen. Über
-Entwicklerwerkzeuge → Statistiken prüfen, welche Entity aktuell noch
-lebendig ist (Wert ändert sich bei jedem Neuladen), und veraltete
-Karteileichen bei Bedarf über die "Probleme beheben"-Funktion der
-Statistik-Übersicht entfernen.
+**Der CSV-Import schlägt fehl oder meldet "keine verwertbaren
+Datenzeilen".** Prüfe in diesem Fall das Format wie im Abschnitt
+[Erwartetes CSV-Format](#erwartetes-csv-format) beschrieben. Portale
+anderer Netzbetreiber können ein abweichendes Exportformat verwenden, das
+nicht unterstützt wird.
 
-**Verbindungsfehler ("Server disconnected") im Protokoll**: einzelne,
-seltene Aussetzer werden ab Version 1.13.3 toleriert (Entity bleibt bis
-zu 3 aufeinanderfolgende fehlgeschlagene Zyklen auf dem letzten bekannten
-Wert verfügbar, statt sofort "nicht verfügbar" zu werden). Bei
-anhaltenden Verbindungsproblemen: Netzwerkverbindung zum Gateway prüfen,
-ggf. über den "Gateway neu starten"-Button der Integration einen
-Neustart des Gateways auslösen.
+**Nach der Einrichtung erscheinen mehrere Entitäten mit ähnlichem Namen.**
+Das kann passieren, wenn das Gerät mehrfach neu eingerichtet wurde. Prüfe
+unter Entwicklerwerkzeuge und Statistiken, welche Entität aktuell noch
+lebendig ist, und entferne veraltete Karteileichen bei Bedarf über die
+Funktion "Probleme beheben" der Statistik-Übersicht.
+
+**Im Protokoll tauchen Verbindungsfehler auf ("Server disconnected").**
+Einzelne, seltene Aussetzer werden toleriert, denn die Entität bleibt bis
+zu drei aufeinanderfolgende fehlgeschlagene Zyklen auf dem letzten
+bekannten Wert. Halten die Verbindungsprobleme dagegen an, prüfe die
+Netzwerkverbindung zum Gateway und löse gegebenenfalls über den Button
+"Gateway neu starten" der Integration einen Neustart aus.
+
+## Hilfe & Kontakt
+
+Wenn du Hilfe bei der Einrichtung, beim CSV-Import oder bei einem anderen
+Problem brauchst, kannst du mich gerne kontaktieren, am einfachsten über
+den [Issue-Tracker dieses
+Repositories](https://github.com/Lutarym/ha-lutarym-ppc-smgw/issues).
+Besonders willkommen sind Rückmeldungen dazu, welche Messstellenbetreiber
+und Gateways funktionieren und welche nicht, denn sie helfen mir, die
+Kompatibilitätshinweise weiter zu verbessern.
 
 ## Lizenz
 
