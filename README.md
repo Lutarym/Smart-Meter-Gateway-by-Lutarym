@@ -380,4 +380,4 @@ Kompatibilitätshinweise weiter zu verbessern.
 
 ## Lizenz
 
-[MIT](LICENSE)
+[GPL-3.0](LICENSE)
