@@ -305,7 +305,7 @@ verf체gbar markiert.
 
 Der zweite Mechanismus ist eine **Plausibilit채tspr체fung**, ebenfalls im
 Coordinator. Offensichtlich unsinnige Messwerte, also negative Werte,
-R펊kspr체nge oder ein unplausibler Sprung von mehr als 20 kWh innerhalb
+R체ckspr체nge oder ein unplausibler Sprung von mehr als 20 kWh innerhalb
 eines Zyklus, werden verworfen, bevor sie in die Entit채t oder die Statistik
 gelangen. Stattdessen bleibt der letzte bekannte plausible Wert stehen, und
 der echte Wert wird beim n채chsten plausiblen Zyklus 체bernommen. Nach einem
