@@ -23,9 +23,10 @@ from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, Platfor
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.helpers.httpx_client import create_async_httpx_client
 
-from .api import PPCSmgwClient
+from .api import PPCSmgwClient, PPCSmgwError
 from .const import (
     ATTR_CSV_PATH,
     ATTR_CLEAR_EXISTING,
@@ -40,6 +41,13 @@ from .const import (
     ATTR_TARGET_ENTITY,
     CONF_METER_IDS,
     CONF_PASSWORD_EXPORT,
+    CONF_RESTART_ENABLED,
+    CONF_RESTART_TIME,
+    CONF_RESTART_WEEKDAY,
+    DEFAULT_RESTART_TIME,
+    DEFAULT_RESTART_WEEKDAY,
+    RESTART_COLLISION_WINDOW_SECONDS,
+    RESTART_MAX_SHIFTS,
     CONF_TARIFF_IDS,
     CONF_SCAN_INTERVAL,
     CONF_USERNAME_EXPORT,
@@ -188,6 +196,58 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Optionaler wöchentlicher Gateway Neustart (Einstellung in "Konfigurieren").
+    if entry.options.get(CONF_RESTART_ENABLED):
+        try:
+            parts = str(entry.options.get(CONF_RESTART_TIME, DEFAULT_RESTART_TIME)).split(":")
+            hh, mm = int(parts[0]), int(parts[1])
+            ss = int(parts[2]) if len(parts) > 2 else 0
+        except (ValueError, IndexError):
+            hh, mm, ss = 3, 0, 0
+
+        try:
+            weekday = int(entry.options.get(CONF_RESTART_WEEKDAY, DEFAULT_RESTART_WEEKDAY))
+        except (TypeError, ValueError):
+            weekday = DEFAULT_RESTART_WEEKDAY
+
+        async def _do_restart(attempt: int = 0) -> None:
+            # Kollision mit einem Abruf (läuft gerade oder steht innerhalb von
+            # 2 Minuten an): Neustart um 2 Minuten verschieben, das Gateway
+            # erlaubt nur eine Sitzung gleichzeitig.
+            if (
+                coordinator.poll_collides_within(RESTART_COLLISION_WINDOW_SECONDS)
+                and attempt < RESTART_MAX_SHIFTS
+            ):
+                _LOGGER.info(
+                    "SMGW: geplanter Gateway Neustart kollidiert mit einem Abruf, "
+                    "wird um %d Sekunden verschoben (Versuch %d).",
+                    RESTART_COLLISION_WINDOW_SECONDS,
+                    attempt + 1,
+                )
+
+                async def _later(_now: Any) -> None:
+                    await _do_restart(attempt + 1)
+
+                entry.async_on_unload(
+                    async_call_later(hass, RESTART_COLLISION_WINDOW_SECONDS, _later)
+                )
+                return
+            _LOGGER.info("SMGW: wöchentlicher geplanter Gateway Neustart wird ausgelöst.")
+            try:
+                token = await coordinator.client.login()
+                await coordinator.client.selftest(token)
+            except PPCSmgwError as err:
+                _LOGGER.warning("SMGW: geplanter Gateway Neustart fehlgeschlagen: %s", err)
+
+        async def _weekly_restart(now: Any) -> None:
+            if now.weekday() != weekday:
+                return
+            await _do_restart(0)
+
+        entry.async_on_unload(
+            async_track_time_change(hass, _weekly_restart, hour=hh, minute=mm, second=ss)
+        )
 
     # Als Task NACH dem Setup einplanen (nicht hier awaiten!): die
     # Verarbeitung aktualisiert am Ende entry.data, was den

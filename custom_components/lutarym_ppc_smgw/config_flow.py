@@ -38,6 +38,11 @@ from .const import (
     ATTR_START_VALUE_EXPORT,
     ATTR_CLEAR_EXISTING,
     CONF_PASSWORD_EXPORT,
+    CONF_RESTART_ENABLED,
+    CONF_RESTART_TIME,
+    CONF_RESTART_WEEKDAY,
+    DEFAULT_RESTART_TIME,
+    DEFAULT_RESTART_WEEKDAY,
     CONF_SCAN_INTERVAL,
     CONF_USERNAME_EXPORT,
     DEFAULT_SCAN_INTERVAL_SECONDS,
@@ -88,6 +93,57 @@ _INTERVAL_CHOICES_MIN = (
     (720, "alle 12 Stunden"),
     (1440, "alle 24 Stunden (empfohlen)"),
 )
+
+LABEL_RESTART_ON = "Gateway einmal pro Woche automatisch neu starten"
+LABEL_RESTART_DAY = "Wochentag für den wöchentlichen Neustart"
+LABEL_RESTART_TIME = "Uhrzeit für den wöchentlichen Neustart"
+
+_WEEKDAYS = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
+
+
+def _restart_fields(entry: Any) -> dict:
+    """Formularfelder für den täglichen Gateway Neustart (mit gespeicherten Werten)."""
+    return {
+        vol.Optional(
+            LABEL_RESTART_ON,
+            default=bool(entry.options.get(CONF_RESTART_ENABLED, False)),
+        ): selector.BooleanSelector(),
+        vol.Optional(
+            LABEL_RESTART_DAY,
+            default=str(entry.options.get(CONF_RESTART_WEEKDAY, DEFAULT_RESTART_WEEKDAY)),
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(value=str(i), label=name)
+                    for i, name in enumerate(_WEEKDAYS)
+                ],
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        ),
+        vol.Optional(
+            LABEL_RESTART_TIME,
+            default=str(entry.options.get(CONF_RESTART_TIME, DEFAULT_RESTART_TIME)),
+        ): selector.TimeSelector(),
+    }
+
+
+def _restart_values(user_input: dict[str, Any], entry: Any) -> dict[str, Any]:
+    """Liest die Neustart Felder aus dem Formular (lesbarer Name oder Schlüssel)."""
+    enabled = user_input.get(LABEL_RESTART_ON, user_input.get(CONF_RESTART_ENABLED))
+    when = user_input.get(LABEL_RESTART_TIME, user_input.get(CONF_RESTART_TIME))
+    day = user_input.get(LABEL_RESTART_DAY, user_input.get(CONF_RESTART_WEEKDAY))
+    if day is None:
+        day = entry.options.get(CONF_RESTART_WEEKDAY, DEFAULT_RESTART_WEEKDAY)
+    return {
+        CONF_RESTART_ENABLED: bool(
+            entry.options.get(CONF_RESTART_ENABLED, False) if enabled is None else enabled
+        ),
+        CONF_RESTART_WEEKDAY: int(day),
+        CONF_RESTART_TIME: str(
+            when or entry.options.get(CONF_RESTART_TIME, DEFAULT_RESTART_TIME)
+        ),
+    }
+
 
 # Feldbeschriftung samt Hinweis direkt aus dem Code (immer sichtbar).
 LABEL_INTERVAL = (
@@ -240,6 +296,7 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         self._reconfigure_import_queue: list[str] = []
         self._reconfigure_clear_asked: bool = False
         self._reconfigure_scan_interval: int | None = None
+        self._reconfigure_restart: dict[str, Any] | None = None
         # WICHTIG: Dieselbe httpx-Client-/PPCSmgwClient-Instanz wird über
         # ALLE Einrichtungsschritte hinweg wiederverwendet (nicht pro
         # Schritt neu erzeugt!). Anders als beim früheren aiohttp-Ansatz
@@ -1094,13 +1151,19 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         """Eigenes Fenster: Abrufintervall (kommt immer, mit oder ohne Import)."""
         reconfigure_entry = self._get_reconfigure_entry()
         current = _current_interval_minutes(reconfigure_entry)
+        # Vorausgewählt ist immer die Empfehlung (24 Stunden), nicht der
+        # bisher gespeicherte Wert. "current" bleibt nur als wählbarer Eintrag
+        # erhalten, falls es ein Sonderwert ist.
+        recommended = DEFAULT_SCAN_INTERVAL_SECONDS // 60
         if user_input is not None:
             chosen = user_input.get(LABEL_INTERVAL, user_input.get(CONF_SCAN_INTERVAL))
             self._reconfigure_scan_interval = int(chosen if chosen is not None else current) * 60
+            self._reconfigure_restart = _restart_values(user_input, reconfigure_entry)
             return await self._async_next_reconfigure_import()
         schema = vol.Schema(
             {
-                vol.Required(LABEL_INTERVAL, default=str(current)): _interval_selector(current),
+                vol.Required(LABEL_INTERVAL, default=str(recommended)): _interval_selector(current),
+                **_restart_fields(reconfigure_entry),
             }
         )
         return self.async_show_form(step_id="reconfigure_interval", data_schema=schema)
@@ -1221,6 +1284,7 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 options={
                     **reconfigure_entry.options,
                     CONF_SCAN_INTERVAL: self._reconfigure_scan_interval,
+                    **(self._reconfigure_restart or {}),
                 },
             )
         return self.async_update_reload_and_abort(
@@ -1305,6 +1369,7 @@ class PPCSmgwOptionsFlow(OptionsFlow):
                         user_input.get(LABEL_INTERVAL, user_input.get(CONF_SCAN_INTERVAL))
                     )
                     * 60,
+                    **_restart_values(user_input, self._config_entry),
                 }
             )
 
@@ -1332,6 +1397,7 @@ class PPCSmgwOptionsFlow(OptionsFlow):
                 vol.Required(
                     LABEL_INTERVAL, default=str(current_scan_interval_minutes)
                 ): _interval_selector(current_scan_interval_minutes),
+                **_restart_fields(self._config_entry),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

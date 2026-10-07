@@ -29,6 +29,18 @@ DEFAULT_SCAN_INTERVAL_SECONDS = 86400  # 24 Stunden (empfohlen, schont die HAN S
 CONF_SCAN_INTERVAL = "scan_interval"
 MIN_SCAN_INTERVAL_SECONDS = 300
 
+# Optionaler wöchentlicher Neustart des Gateways (in entry.options). Zeit als
+# "HH:MM:SS" in der Home Assistant Ortszeit, Wochentag 0 = Montag ... 6 = Sonntag.
+CONF_RESTART_ENABLED = "weekly_restart"
+CONF_RESTART_WEEKDAY = "weekly_restart_weekday"
+CONF_RESTART_TIME = "weekly_restart_time"
+DEFAULT_RESTART_TIME = "03:00:00"
+DEFAULT_RESTART_WEEKDAY = 6
+# Liegt der geplante Neustart so nah an einem Abruf, wird er um diese Zeit
+# (Sekunden) verschoben.
+RESTART_COLLISION_WINDOW_SECONDS = 120
+RESTART_MAX_SHIFTS = 5
+
 # Optionaler zweiter HAN-Login ausschließlich für OBIS 2.8.0 (Einspeisung),
 # z.B. wenn der Netzbetreiber Bezug und Einspeisung als getrennte Zugänge
 # (andere Kostenstelle) bereitstellt. Beide Schlüssel liegen in entry.data;

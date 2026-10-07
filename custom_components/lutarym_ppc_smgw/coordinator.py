@@ -154,6 +154,9 @@ class PPCSmgwCoordinator(DataUpdateCoordinator[dict[str, dict]]):
         # Daten, sondern ausschließlich der zweite (siehe _async_update_data).
         self.export_client = export_client
         self._export_failures = 0
+        # Für die Kollisionsprüfung des geplanten Gateway Neustarts.
+        self._poll_running = False
+        self._last_poll_started: float | None = None
         self.entry = entry  # für Entity-Auflösung (Restore von last_good nach Neustart)
         self.meter_labels = meter_labels  # None = alle am Gateway gefundenen Zähler
         self.tariff_labels = tariff_labels  # None = alle gefundenen Auswertungsprofile
@@ -174,7 +177,31 @@ class PPCSmgwCoordinator(DataUpdateCoordinator[dict[str, dict]]):
         self._last_good_time: dict[str, float] = {}
         self._rejected_streak: dict[str, tuple[float, int]] = {}
 
+    def poll_collides_within(self, seconds: float) -> bool:
+        """True, wenn gerade ein Abruf läuft oder einer innerhalb von `seconds`
+        Sekunden (vor oder nach jetzt) stattfindet bzw. stattgefunden hat."""
+        if self._poll_running:
+            return True
+        if self._last_poll_started is None:
+            return False
+        now = time.monotonic()
+        interval = self.update_interval.total_seconds() if self.update_interval else 0
+        if now - self._last_poll_started < seconds:
+            return True
+        if interval > 0:
+            next_poll = self._last_poll_started + interval
+            return abs(next_poll - now) < seconds
+        return False
+
     async def _async_update_data(self) -> dict[str, dict]:
+        self._poll_running = True
+        self._last_poll_started = time.monotonic()
+        try:
+            return await self._async_update_data_inner()
+        finally:
+            self._poll_running = False
+
+    async def _async_update_data_inner(self) -> dict[str, dict]:
         token: str | None = None
         try:
             # Ein Login pro Zyklus - der zurückgegebene token bleibt für

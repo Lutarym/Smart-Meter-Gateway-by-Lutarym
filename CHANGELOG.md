@@ -7,9 +7,11 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 
 ## 2.9.5
 
-- Das Abrufintervall steht jetzt standardmäßig auf 24 Stunden (gilt auch für bestehende
-  Einträge, die noch nichts gewählt hatten). Die Feldbeschriftung enthält den Hinweis,
-  dass zu viele Abfragen die HAN Schnittstelle sperren können.
+- Neu: Optionaler wöchentlicher Gateway Neustart (Wochentag und Uhrzeit wählbar, Standard Sonntag 03:00,
+  standardmäßig aus). Einstellbar im Fenster "Abrufintervall" bei "Neu konfigurieren" und in
+  "Konfigurieren". Er löst denselben Neustart aus wie der Button "Gateway neu starten". Läuft gerade ein
+  Abruf oder steht innerhalb von 2 Minuten einer an, wird der Neustart um 2 Minuten verschoben (höchstens 5 Mal).
+- Im Fenster "Abrufintervall" ist immer 24 Stunden vorausgewählt (auch wenn vorher ein anderer Wert gespeichert war).
 - Das Abrufintervall kommt in "Neu konfigurieren" jetzt als eigenes Fenster direkt nach den
   Zugangsdaten, immer, auch wenn kein Import gewählt wird.
 - Neu: Das Abrufintervall ist jetzt eine Auswahl (alle 5, 15, 30 Minuten, jede Stunde,
