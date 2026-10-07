@@ -1,4 +1,4 @@
-# Integrationsversion: 2.7.0
+# Integrationsversion: 2.7.5
 """1:1-Import einer TraveNetz/iMSys-CSV-Exportdatei (stündliche
 
 "Energie bezogen"-Werte) in die Langzeit-Statistik dieser Integration.
@@ -11,6 +11,10 @@ fehlende Stunden INNERHALB des Datenbereichs (Status "F"/"-" in der
 Exportdatei) werden linear zwischen den beiden benachbarten echten Werten
 interpoliert, damit die Reihe lückenlos bleibt - das ist keine Schätzung
 der GRÖSSENORDNUNG, nur ein Lückenschluss zwischen zwei bekannten Punkten.
+
+Auch der Export "Energie geliefert" (OBIS 2.8.0) wird gelesen: dort steht
+die Energie direkt in kWh, der Zeitstempel hat das Format
+"01.11.2025 00:00", Werte "-" sind Lücken (Status "N").
 
 Erwartetes CSV-Format (TraveNetz-Kundenportal-Export):
     ;;"<Zählernummer> / Energie bezogen (stündlich)";"";"";
@@ -50,6 +54,27 @@ def _parse_value(raw: str) -> float | None:
     return float(raw.replace(",", "."))
 
 
+# Bekannte Zeitstempel-Formate: der Export "Energie bezogen" nutzt
+# "27.11.2025 - 00:00:00", der Export "Energie geliefert" nutzt
+# "01.11.2025 00:00" (ohne Sekunden und ohne " - ").
+_TIMESTAMP_FORMATS = (
+    "%d.%m.%Y - %H:%M:%S",
+    "%d.%m.%Y %H:%M:%S",
+    "%d.%m.%Y %H:%M",
+    "%d.%m.%Y - %H:%M",
+)
+
+
+def _parse_timestamp(raw: str) -> datetime | None:
+    raw = raw.strip()
+    for fmt in _TIMESTAMP_FORMATS:
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    return None
+
+
 def _parse_travenetz_csv_sync(path: str) -> list[tuple[datetime, float]]:
     """Blockierendes Datei-Parsing - MUSS im Executor laufen (siehe
 
@@ -86,22 +111,29 @@ def _parse_travenetz_csv_sync(path: str) -> list[tuple[datetime, float]]:
                     continue  # unlesbarer Wert: Zeile wie eine Lücke behandeln
                 if power_kw is None:
                     continue  # "-" (Status F), Lücke, wird unten interpoliert
-                try:
-                    start_local_naive = datetime.strptime(
-                        r[0].strip(), "%d.%m.%Y - %H:%M:%S"
-                    )
-                    end_local_naive = datetime.strptime(
-                        r[1].strip(), "%d.%m.%Y - %H:%M:%S"
-                    )
-                except ValueError:
+                start_local_naive = _parse_timestamp(r[0])
+                end_local_naive = _parse_timestamp(r[1])
+                if start_local_naive is None or end_local_naive is None:
                     continue
-                # Intervalldauer in Stunden aus von/bis. Fällt auf 24 h
-                # zurück, falls bis <= von (defekte Zeile) - der
-                # Tages-Export ist der Normalfall.
-                duration_h = (end_local_naive - start_local_naive).total_seconds() / 3600.0
-                if duration_h <= 0:
-                    duration_h = 24.0
-                energy_kwh = power_kw * duration_h
+                # Einheit der Datei: "kWh" (z.B. Export "Energie geliefert")
+                # ist bereits Energie, "Wh" wird umgerechnet. Alles andere
+                # (Normalfall "kW") ist die mittlere Leistung des Intervalls
+                # und wird mit der Intervalldauer multipliziert.
+                unit = r[3].strip().lower()
+                if unit == "kwh":
+                    energy_kwh = power_kw
+                elif unit == "wh":
+                    energy_kwh = power_kw / 1000.0
+                else:
+                    # Intervalldauer in Stunden aus von/bis. Fällt auf 24 h
+                    # zurück, falls bis <= von (defekte Zeile) - der
+                    # Tages-Export ist der Normalfall.
+                    duration_h = (
+                        end_local_naive - start_local_naive
+                    ).total_seconds() / 3600.0
+                    if duration_h <= 0:
+                        duration_h = 24.0
+                    energy_kwh = power_kw * duration_h
                 fold = 0
                 if start_local_naive in seen_starts:
                     first = start_local_naive.replace(tzinfo=_BERLIN, fold=0)

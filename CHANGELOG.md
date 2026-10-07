@@ -5,6 +5,18 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 2.7.5
+
+Versionsnummer angehoben, keine weiteren Änderungen gegenüber 2.7.1.
+
+## 2.7.1
+
+**Fehlerbehebung**
+
+- Fix: Die CSV für 2.8.0 (Export "Energie geliefert") wird jetzt gelesen. Sie hat
+  Zeitstempel ohne Sekunden ("01.11.2025 00:00") und liefert die Energie
+  direkt in kWh. Die Einheit der Datei wird beachtet (kWh, Wh, kW).
+
 ## 2.7.0
 
 **Historien-Import auch für 2.8.0 (Einspeisung)**
