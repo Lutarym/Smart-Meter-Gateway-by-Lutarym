@@ -7,6 +7,9 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 
 ## 2.9.0
 
+- Neu: Das Abrufintervall ist jetzt eine Auswahl (alle 5, 15, 30 Minuten, jede Stunde,
+  alle 12 Stunden, alle 24 Stunden). Einstellbar in "Neu konfigurieren" und in
+  "Konfigurieren".
 - Fix: Die Upload-Felder tragen jetzt ihre Beschriftung direkt als Feldnamen aus dem
   Code (z. B. "CSV Datei für 1.8.0 (Netzbezug, Energie bezogen)"). Dadurch ist auch
   dann klar, wofür der Upload ist, wenn Home Assistant die Übersetzungstexte nicht

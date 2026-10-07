@@ -47,7 +47,8 @@
           "password": "Password",
           "username_export": "Second login for 2.8.0: username (optional)",
           "password_export": "Second login for 2.8.0: password (optional)",
-          "import_obis": "Import history (optional)"
+          "import_obis": "Import history (optional)",
+          "scan_interval": "Polling interval"
         }
       },
       "history": {

@@ -33,7 +33,8 @@
           "password": "Passwort",
           "username_export": "Zweiter Login für 2.8.0: Benutzername (optional)",
           "password_export": "Zweiter Login für 2.8.0: Passwort (optional)",
-          "import_obis": "Historie importieren (optional)"
+          "import_obis": "Historie importieren (optional)",
+          "scan_interval": "Abrufintervall"
         }
       },
       "meters": {
