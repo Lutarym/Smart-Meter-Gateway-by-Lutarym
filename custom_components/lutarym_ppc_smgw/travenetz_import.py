@@ -1,4 +1,4 @@
-# Integrationsversion: 2.5.3
+# Integrationsversion: 2.6.1
 """1:1-Import einer TraveNetz/iMSys-CSV-Exportdatei (stündliche
 
 "Energie bezogen"-Werte) in die Langzeit-Statistik dieser Integration.
@@ -27,18 +27,15 @@ from __future__ import annotations
 
 import csv
 import logging
+from bisect import bisect_right
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from homeassistant.components.recorder.models import (
-    StatisticData,
-    StatisticMeanType,
-    StatisticMetaData,
-)
+from homeassistant.components.recorder.models import StatisticData
 from homeassistant.components.recorder.statistics import async_import_statistics
 from homeassistant.core import HomeAssistant
 
-from .history_import import HistoryImportError
+from .history_import import HistoryImportError, build_energy_statistic_metadata
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,15 +69,23 @@ def _parse_travenetz_csv_sync(path: str) -> list[tuple[datetime, float]]:
     wird als (Startzeitpunkt_UTC, Energie_kWh) zurückgegeben.
     """
     rows: list[tuple[datetime, float]] = []
+    # Lokale Startzeiten, die in der Datei schon vorkamen. Beim Wechsel von
+    # Sommer- auf Winterzeit steht die Stunde 02:00-03:00 zweimal in der
+    # Datei: das zweite Vorkommen ist die Winterzeit (fold=1), sonst würden
+    # beide Zeilen auf denselben UTC-Zeitpunkt fallen.
+    seen_starts: set[datetime] = set()
     try:
         with open(path, encoding="utf-8-sig", newline="") as f:
             reader = csv.reader(f, delimiter=";")
             for i, r in enumerate(reader):
                 if i < 2 or len(r) < 5:
                     continue  # Kopfzeilen / leere/kurze Zeilen überspringen
-                power_kw = _parse_value(r[2])
+                try:
+                    power_kw = _parse_value(r[2])
+                except ValueError:
+                    continue  # unlesbarer Wert: Zeile wie eine Lücke behandeln
                 if power_kw is None:
-                    continue  # "-" (Status F) - Lücke, wird unten interpoliert
+                    continue  # "-" (Status F), Lücke, wird unten interpoliert
                 try:
                     start_local_naive = datetime.strptime(
                         r[0].strip(), "%d.%m.%Y - %H:%M:%S"
@@ -97,7 +102,14 @@ def _parse_travenetz_csv_sync(path: str) -> list[tuple[datetime, float]]:
                 if duration_h <= 0:
                     duration_h = 24.0
                 energy_kwh = power_kw * duration_h
-                start_local = start_local_naive.replace(tzinfo=_BERLIN)
+                fold = 0
+                if start_local_naive in seen_starts:
+                    first = start_local_naive.replace(tzinfo=_BERLIN, fold=0)
+                    second = start_local_naive.replace(tzinfo=_BERLIN, fold=1)
+                    if first.utcoffset() != second.utcoffset():
+                        fold = 1  # echte Doppelstunde der Zeitumstellung
+                seen_starts.add(start_local_naive)
+                start_local = start_local_naive.replace(tzinfo=_BERLIN, fold=fold)
                 rows.append((start_local.astimezone(_UTC), energy_kwh))
     except OSError as err:
         raise HistoryImportError(
@@ -177,12 +189,16 @@ def _fill_internal_gaps(rows: list[tuple[datetime, float]]) -> dict[datetime, fl
     # Toleranz: Zeitstempel muss nur nahe am Raster liegen (DST-Sprünge,
     # kleine Rundungen), exakter Treffer wird über die nächstgelegene
     # echte Zeit gesucht.
-    while cur <= last_ts + step / 2:
+    half_step = step / 2
+    while cur <= last_ts + half_step:
+        # Erster echter Zeitstempel mit cur - half_step < ts < cur + half_step
+        # per Bisection (statt jeden Punkt je Rasterschritt zu durchlaufen:
+        # das war O(N^2) und blockierte bei einem Jahr Stundenwerte den
+        # Event-Loop mehrere Sekunden).
         match = None
-        for ts in by_ts:
-            if abs((ts - cur).total_seconds()) < step.total_seconds() / 2:
-                match = ts
-                break
+        idx = bisect_right(timestamps_sorted, cur - half_step)
+        if idx < len(timestamps_sorted) and timestamps_sorted[idx] < cur + half_step:
+            match = timestamps_sorted[idx]
         if match is not None:
             if pending_gap_start is not None:
                 gap_slots = filled_pending_range(pending_gap_start, cur, step)
@@ -366,16 +382,7 @@ async def import_csv_history(
     if dry_run or not stats:
         return summary
 
-    metadata = StatisticMetaData(
-        has_mean=False,
-        mean_type=StatisticMeanType.NONE,
-        has_sum=True,
-        name=target_name,
-        source="recorder",
-        statistic_id=target_statistic_id,
-        unit_of_measurement="kWh",
-        unit_class="energy",
-    )
+    metadata = build_energy_statistic_metadata(target_statistic_id, target_name)
     # WICHTIG: async_import_statistics ist mit @callback markiert (siehe
     # homeassistant/components/recorder/statistics.py) - SYNCHRON, reiht nur
     # einen Job in die Recorder-Warteschlange ein und gibt None zurück. NICHT

@@ -1,4 +1,4 @@
-# Integrationsversion: 2.5.3
+# Integrationsversion: 2.6.1
 """Button-Plattform für die PPC Smart Meter Gateway Integration.
 
 Stellt einen "Gateway neu starten"-Button bereit (action=selftest). In der
@@ -15,9 +15,11 @@ import logging
 from homeassistant.components.button import ButtonDeviceClass, ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .api import PPCSmgwError
 from .const import DOMAIN
 from .coordinator import PPCSmgwCoordinator, build_device_info
 
@@ -54,6 +56,11 @@ class PPCSmgwRestartButton(CoordinatorEntity[PPCSmgwCoordinator], ButtonEntity):
 
     async def async_press(self) -> None:
         _LOGGER.info("SMGW: Neustart/Selbsttest wird ausgelöst (Button gedrückt).")
-        token = await self.coordinator.client.login()
-        await self.coordinator.client.selftest(token)
+        try:
+            token = await self.coordinator.client.login()
+            await self.coordinator.client.selftest(token)
+        except PPCSmgwError as err:
+            # Als HomeAssistantError, damit die Oberfläche eine lesbare
+            # Meldung zeigt statt eines unbehandelten Fehlers im Log.
+            raise HomeAssistantError(f"Gateway-Neustart fehlgeschlagen: {err}") from err
         # Bewusst kein logout() - siehe Docstring von PPCSmgwClient.selftest().

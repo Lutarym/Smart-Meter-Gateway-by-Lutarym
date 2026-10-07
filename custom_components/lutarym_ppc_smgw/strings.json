@@ -16,6 +16,14 @@
           "password": "Password"
         }
       },
+      "reauth_confirm": {
+        "title": "Renew gateway login",
+        "description": "The gateway at {host} rejected the stored credentials. Enter the current HAN credentials. After a password change it can take a while until the new password becomes active in the gateway.\n\nInstalled integration version: {version}\n\n{debug_info}",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
       "meters": {
         "title": "Select meters",
         "description": "{status}\n\nThe following meters were found on the gateway. Choose which ones should be created as sensors.\n\nInstalled integration version: {version}\n\n{debug_info}",
@@ -32,11 +40,13 @@
       },
       "reconfigure": {
         "title": "Update gateway connection",
-        "description": "Update the host, username or password for this gateway. Your existing entities, history and imported statistics are kept - only the connection details change.\n\nInstalled integration version: {version}\n\n{debug_info}",
+        "description": "Update the host, username or password for this gateway. Your existing entities, history and imported statistics are kept - only the connection details change. Optionally, enter a second login for 2.8.0 only. Leaving both fields empty removes it.\n\nInstalled integration version: {version}\n\n{debug_info}",
         "data": {
           "host": "IP address / hostname",
           "username": "Username",
-          "password": "Password"
+          "password": "Password",
+          "username_export": "Second login for 2.8.0: username (optional)",
+          "password_export": "Second login for 2.8.0: password (optional)"
         }
       },
       "history": {
@@ -45,6 +55,14 @@
         "data": {
           "csv_upload": "TraveNetz CSV export",
           "start_value": "Start value (fallback only, if no live value available)"
+        }
+      },
+      "export_credentials": {
+        "title": "Second login for 2.8.0 (optional)",
+        "description": "{status}\n\nSome grid operators issue separate HAN credentials for consumption (1.8.0) and feed-in (2.8.0). Enter the second login here; it is used to fetch the 2.8.0 values. Leave both fields empty to skip this step: 2.8.0 is then fetched through the first login as before, if that login provides it.\n\nInstalled integration version: {version}\n\n{debug_info}",
+        "data": {
+          "username_export": "Username (2.8.0)",
+          "password_export": "Password (2.8.0)"
         }
       },
       "summary": {
@@ -59,11 +77,17 @@
       "invalid_auth": "Login rejected by the gateway (HTTP 401) - username or password is incorrect.",
       "parsing_error": "Login was successful (credentials are correct!), but the gateway's response page could not be read. See details below.",
       "cannot_connect": "Could not reach the gateway on port 443. Check the IP address and network route.",
-      "no_meters_found": "No meters were found on the gateway. See details below."
+      "no_meters_found": "No meters were found on the gateway. See details below.",
+      "export_credentials_incomplete": "Fill in both username and password for the second login, or leave both fields empty to skip.",
+      "export_invalid_auth": "Second login (2.8.0) rejected by the gateway (HTTP 401). Username or password is incorrect.",
+      "export_parsing_error": "Second login (2.8.0) was successful, but the gateway's response page could not be read. See details below.",
+      "export_cannot_connect": "Second login (2.8.0): gateway not reachable or unexpected response. See details below.",
+      "export_no_meters_found": "No meters were found on the gateway with the second login (2.8.0)."
     },
     "abort": {
       "already_configured": "This gateway is already configured.",
-      "reconfigure_successful": "Connection details updated successfully."
+      "reconfigure_successful": "Connection details updated successfully.",
+      "reauth_successful": "Credentials updated successfully."
     }
   },
   "options": {

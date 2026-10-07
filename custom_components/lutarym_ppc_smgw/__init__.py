@@ -1,4 +1,4 @@
-# Integrationsversion: 2.5.3
+# Integrationsversion: 2.6.1
 """PPC Smart Meter Gateway (iMSys) Integration für Home Assistant.
 
 Einstiegspunkt der Integration (von Home Assistant automatisch anhand des
@@ -35,8 +35,10 @@ from .const import (
     ATTR_START_VALUE,
     ATTR_TARGET_ENTITY,
     CONF_METER_IDS,
+    CONF_PASSWORD_EXPORT,
     CONF_TARIFF_IDS,
     CONF_SCAN_INTERVAL,
+    CONF_USERNAME_EXPORT,
     DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
     SERVICE_IMPORT_HISTORY,
@@ -128,6 +130,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_PASSWORD],
     )
 
+    # Optionaler zweiter Login nur für 2.8.0 (siehe const.CONF_USERNAME_EXPORT).
+    # Eigener httpx-Client, damit Cookie-Jar und Digest-Zustand der beiden
+    # Sessions getrennt bleiben. Fehlen die Daten, läuft alles wie bisher
+    # über den ersten Login.
+    export_client: PPCSmgwClient | None = None
+    export_username = entry.data.get(CONF_USERNAME_EXPORT)
+    export_password = entry.data.get(CONF_PASSWORD_EXPORT)
+    if export_username and export_password:
+        export_client = PPCSmgwClient(
+            create_async_httpx_client(hass, verify_ssl=False),
+            entry.data[CONF_HOST],
+            export_username,
+            export_password,
+        )
+
     # None = "noch nichts ausgewählt" bzw. "alle verfügbaren abrufen" -
     # siehe jeweilige Docstrings in coordinator.py, wie None von einer
     # leeren Liste (explizit nichts) unterschieden wird.
@@ -145,6 +162,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         tariff_ids,
         timedelta(seconds=scan_interval_seconds),
         entry=entry,
+        export_client=export_client,
     )
     # Erster Abruf synchron beim Setup - schlägt er fehl, bricht das
     # Setup des Config Entry mit einer aussagekräftigen Fehlermeldung ab,

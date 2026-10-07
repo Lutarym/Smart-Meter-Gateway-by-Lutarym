@@ -5,6 +5,60 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 2.6.1
+
+**Fehlerbehebungen und Optimierungen nach Code-Review**
+
+- Fix: Die Plausibilitätsprüfung der Zählerwerte konnte einen Sensor
+  dauerhaft auf dem alten Stand festhalten. Nach einer längeren Pause
+  (Abrufintervall bis 24 h, Gateway- oder HA-Ausfall) galt jeder Wert mit
+  mehr als 20 kWh Zuwachs als Ausreißer, und da der Zähler nur weiter
+  steigt, wurde jeder folgende Wert ebenfalls verworfen. Die erlaubte
+  Zunahme wächst jetzt mit der vergangenen Zeit (80 kW), und ein Wert, der
+  3-mal in Folge steigend als Ausreißer erkannt wird (z.B. Zählerwechsel),
+  wird als neuer Zählerstand übernommen. Einzelne Glitches werden wie
+  bisher verworfen. Die Schwellen werden bei der Einheit "Wh" skaliert.
+- Fix: Der CSV-Import blockierte Home Assistant bei Jahresexporten mit
+  Stundenwerten mehrere Sekunden (Lückenfüllung mit quadratischem
+  Aufwand). Jetzt per Bisektion, 8760 Stunden dauern wenige Millisekunden.
+  Das Ergebnis ist identisch zur alten Berechnung.
+- Fix: CSV-Import überspringt Zeilen mit unlesbarem Wert, statt mit einem
+  Fehler abzubrechen, und ordnet die doppelte Stunde der Zeitumstellung
+  (Oktober) zwei verschiedenen UTC-Stunden zu.
+- Fix: Die Duplikat-Prüfung der Einrichtung (Gateway schon eingerichtet)
+  läuft jetzt VOR dem ersten Login. Vorher blieb bei einem Abbruch die
+  Gateway-Session offen, obwohl das Gateway nur eine Session gleichzeitig
+  erlaubt.
+- Neu: Reauth-Dialog. Lehnt das Gateway die gespeicherten Zugangsdaten ab,
+  bietet Home Assistant jetzt einen Dialog zum Erneuern von Benutzername
+  und Passwort an. Vorher fehlte der Schritt, obwohl der Coordinator
+  die Neuanmeldung anfordert.
+- Fix: Der Button "Gateway neu starten" meldet Fehler jetzt als lesbare
+  Home-Assistant-Meldung.
+- Aufräumen: Die Statistik-Metadaten des Historien-Imports sind nur noch
+  an einer Stelle definiert.
+
+## 2.6.0
+
+**Optionaler zweiter Login nur für 2.8.0 (Einspeisung)**
+
+- Manche Netzbetreiber vergeben für Bezug (1.8.0) und Einspeisung (2.8.0)
+  getrennte HAN-Zugangsdaten. Der Einrichtungsassistent hat dafür einen
+  neuen, optionalen Schritt "Zweiter Login für 2.8.0". Beide Felder leer
+  lassen überspringt ihn: Alles läuft dann unverändert über den ersten
+  Login.
+- Ist ein zweiter Login hinterlegt, kommen 1.8.0 (und die Auswertungs-
+  profile) vom ersten und 2.8.0 ausschließlich vom zweiten Login. Die
+  beiden Sessions laufen nacheinander (das Gateway erlaubt nur eine
+  Session gleichzeitig), jede mit eigenem Logout.
+- Fällt nur der zweite Login aus, bleiben die 1.8.0-Werte unberührt.
+  Einzelne Aussetzer der 2.8.0-Abfrage werden wie beim ersten Login
+  toleriert (letzte bekannte Werte bleiben aktiv).
+- "Neu konfigurieren" kann den zweiten Login nachträglich eintragen,
+  ändern oder durch Leeren beider Felder wieder entfernen.
+- Der zweite Login wird bei der Einrichtung bzw. Neukonfiguration mit
+  einer eigenen Kurz-Session geprüft (Login, Zählerliste, Logout).
+
 ## 2.5.3
 
 **Aufräumung: Reparatur-Services entfernt**

@@ -1,4 +1,4 @@
-# Integrationsversion: 2.5.3
+# Integrationsversion: 2.6.1
 """Einmaliger Import einer korrigierten historischen Zeitreihe für den
 
 OBIS 1-0:1.8.0 ("Bezug") Sensor dieser Integration - aufgerufen über den
@@ -162,6 +162,21 @@ class HistoryImportError(Exception):
     """Fehler beim Aufbau/Import der historischen Reihe (nutzerlesbar)."""
 
 
+def build_energy_statistic_metadata(statistic_id: str, name: str) -> StatisticMetaData:
+    """Metadaten für die importierte kWh-Summenstatistik. Von beiden
+    Import-Wegen (skaliert und CSV) gemeinsam genutzt."""
+    return StatisticMetaData(
+        has_mean=False,
+        mean_type=StatisticMeanType.NONE,
+        has_sum=True,
+        name=name,
+        source="recorder",
+        statistic_id=statistic_id,
+        unit_of_measurement="kWh",
+        unit_class="energy",
+    )
+
+
 async def import_history(
     hass: HomeAssistant,
     *,
@@ -322,16 +337,7 @@ async def import_history(
     if dry_run or not stats:
         return summary
 
-    metadata = StatisticMetaData(
-        has_mean=False,
-        mean_type=StatisticMeanType.NONE,
-        has_sum=True,
-        name=target_name,
-        source="recorder",
-        statistic_id=target_statistic_id,
-        unit_of_measurement="kWh",
-        unit_class="energy",
-    )
+    metadata = build_energy_statistic_metadata(target_statistic_id, target_name)
     # WICHTIG: async_import_statistics ist mit @callback markiert (siehe
     # homeassistant/components/recorder/statistics.py) - SYNCHRON, reiht nur
     # einen Job in die Recorder-Warteschlange ein und gibt None zurück. NICHT

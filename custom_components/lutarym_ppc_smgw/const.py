@@ -1,4 +1,4 @@
-# Integrationsversion: 2.5.3
+# Integrationsversion: 2.6.1
 """Konstanten für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 # Interner, technischer Bezeichner der Integration. Wird u.a. für
@@ -29,6 +29,14 @@ DEFAULT_SCAN_INTERVAL_SECONDS = 900  # Entspricht dem Ausleseintervall des Gatew
 CONF_SCAN_INTERVAL = "scan_interval"
 MIN_SCAN_INTERVAL_SECONDS = 300
 
+# Optionaler zweiter HAN-Login ausschließlich für OBIS 2.8.0 (Einspeisung),
+# z.B. wenn der Netzbetreiber Bezug und Einspeisung als getrennte Zugänge
+# (andere Kostenstelle) bereitstellt. Beide Schlüssel liegen in entry.data;
+# fehlen sie (oder sind leer), wird der Schritt als "übersprungen" gewertet
+# und alle Werte kommen wie bisher über den ersten Login.
+CONF_USERNAME_EXPORT = "username_export"
+CONF_PASSWORD_EXPORT = "password_export"
+
 MANUFACTURER = "Power Plus Communications AG"
 MODEL = "LTE Smart Meter Gateway"
 
@@ -40,7 +48,7 @@ HAN_PATH = "/cgi-bin/hanservice.cgi"
 # Wird im Config-Flow-Dialog und als Geräte-Softwareversion angezeigt, damit
 # man die installierte Version prüfen kann, auch bevor eine Verbindung
 # erfolgreich zustande kommt.
-VERSION = "2.5.3"
+VERSION = "2.6.1"
 
 # Service "lutarym_ppc_smgw.import_history" - einmaliger Import einer
 # korrigierten historischen Zeitreihe für den 1-0:1.8.0-Sensor

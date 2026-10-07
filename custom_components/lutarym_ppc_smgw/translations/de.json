@@ -16,13 +16,23 @@
           "password": "Passwort"
         }
       },
+      "reauth_confirm": {
+        "title": "Gateway-Login erneuern",
+        "description": "Das Gateway unter {host} hat die gespeicherten Zugangsdaten abgelehnt. Gib die aktuellen HAN-Zugangsdaten ein. Nach einem Passwortwechsel kann es dauern, bis das neue Passwort im Gateway aktiv ist.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
+        "data": {
+          "username": "Benutzername",
+          "password": "Passwort"
+        }
+      },
       "reconfigure": {
         "title": "Gateway-Verbindung aktualisieren",
-        "description": "Aktualisiere Host, Benutzername oder Passwort für dieses Gateway. Deine bestehenden Entitäten, der Verlauf und importierte Statistiken bleiben erhalten - nur die Verbindungsdaten ändern sich.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
+        "description": "Aktualisiere Host, Benutzername oder Passwort für dieses Gateway. Deine bestehenden Entitäten, der Verlauf und importierte Statistiken bleiben erhalten - nur die Verbindungsdaten ändern sich. Optional kannst du einen zweiten Login nur für 2.8.0 eintragen. Beide Felder leer lassen entfernt ihn wieder.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
         "data": {
           "host": "IP-Adresse / Hostname",
           "username": "Benutzername",
-          "password": "Passwort"
+          "password": "Passwort",
+          "username_export": "Zweiter Login für 2.8.0: Benutzername (optional)",
+          "password_export": "Zweiter Login für 2.8.0: Passwort (optional)"
         }
       },
       "meters": {
@@ -47,6 +57,14 @@
           "start_value": "Startwert (nur Fallback, falls kein Live-Wert abrufbar)"
         }
       },
+      "export_credentials": {
+        "title": "Zweiter Login für 2.8.0 (optional)",
+        "description": "{status}\n\nManche Netzbetreiber vergeben für Bezug (1.8.0) und Einspeisung (2.8.0) getrennte HAN-Zugangsdaten. Gib hier den zweiten Login ein, über den die Werte für 2.8.0 abgerufen werden. Beide Felder leer lassen überspringt diesen Schritt: 2.8.0 wird dann wie bisher über den ersten Login abgerufen, sofern dieser ihn liefert.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
+        "data": {
+          "username_export": "Benutzername (2.8.0)",
+          "password_export": "Passwort (2.8.0)"
+        }
+      },
       "summary": {
         "title": "Einrichtung abschließen",
         "description": "{status}\n\nAlle Schritte wurden erfolgreich durchlaufen. Klicke auf **Absenden**, um die Integration anzulegen.\n\nInstallierte Integrationsversion: {version}",
@@ -59,11 +77,17 @@
       "invalid_auth": "Login vom Gateway abgelehnt (HTTP 401) - Benutzername oder Passwort ist falsch.",
       "parsing_error": "Login war erfolgreich (Zugangsdaten sind korrekt!), aber die Antwortseite des Gateways konnte nicht ausgelesen werden. Details siehe unten.",
       "cannot_connect": "Gateway auf Port 443 nicht erreichbar. IP-Adresse und Netzwerkroute prüfen.",
-      "no_meters_found": "Es wurden keine Zähler am Gateway gefunden. Details siehe unten."
+      "no_meters_found": "Es wurden keine Zähler am Gateway gefunden. Details siehe unten.",
+      "export_credentials_incomplete": "Bitte Benutzername und Passwort für den zweiten Login ausfüllen oder beide Felder leer lassen, um zu überspringen.",
+      "export_invalid_auth": "Zweiter Login (2.8.0) vom Gateway abgelehnt (HTTP 401). Benutzername oder Passwort ist falsch.",
+      "export_parsing_error": "Zweiter Login (2.8.0) war erfolgreich, aber die Antwortseite des Gateways konnte nicht ausgelesen werden. Details siehe unten.",
+      "export_cannot_connect": "Zweiter Login (2.8.0): Gateway nicht erreichbar oder unerwartete Antwort. Details siehe unten.",
+      "export_no_meters_found": "Mit dem zweiten Login (2.8.0) wurden keine Zähler am Gateway gefunden."
     },
     "abort": {
       "already_configured": "Dieses Gateway ist bereits eingerichtet.",
-      "reconfigure_successful": "Verbindungsdaten erfolgreich aktualisiert."
+      "reconfigure_successful": "Verbindungsdaten erfolgreich aktualisiert.",
+      "reauth_successful": "Zugangsdaten erfolgreich aktualisiert."
     }
   },
   "options": {

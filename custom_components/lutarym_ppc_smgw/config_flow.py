@@ -1,10 +1,11 @@
-# Integrationsversion: 2.5.3
+# Integrationsversion: 2.6.1
 """Config Flow für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 from __future__ import annotations
 
 import html
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -32,7 +33,9 @@ from .const import (
     ATTR_CSV_UPLOAD,
     ATTR_HISTORY_IMPORT,
     ATTR_START_VALUE,
+    CONF_PASSWORD_EXPORT,
     CONF_SCAN_INTERVAL,
+    CONF_USERNAME_EXPORT,
     DEFAULT_SCAN_INTERVAL_SECONDS,
     MIN_SCAN_INTERVAL_SECONDS,
     CONF_METER_IDS,
@@ -42,6 +45,40 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+async def _async_test_export_login(
+    host: str, username: str, password: str
+) -> tuple[str | None, str, int]:
+    """Testet den zweiten Login (2.8.0) mit einer EIGENEN, kurzen Session.
+
+    Gibt (Fehlerschlüssel | None, Debug-Info, Anzahl gefundener Zähler)
+    zurück. Der Fehlerschlüssel ist einer von "invalid_auth",
+    "parsing_error", "cannot_connect", "no_meters_found"; der Aufrufer
+    stellt ihm "export_" voran, damit die Fehlermeldung klar auf den
+    zweiten Login verweist. Meldet sich immer wieder ab (das Gateway
+    erlaubt nur eine Session gleichzeitig), darf daher erst aufgerufen
+    werden, wenn die Session des ersten Logins bereits beendet ist.
+    """
+    httpx_client = httpx.AsyncClient(verify=False)
+    client = PPCSmgwClient(httpx_client, host, username, password)
+    token: str | None = None
+    try:
+        token = await client.login()
+        meters = await client.list_meters(token)
+    except PPCSmgwAuthError as err:
+        return "invalid_auth", html.escape(err.details), 0
+    except PPCSmgwParsingError as err:
+        return "parsing_error", html.escape(err.details), 0
+    except PPCSmgwConnectionError as err:
+        return "cannot_connect", html.escape(err.details), 0
+    finally:
+        if token is not None:
+            await client.logout(token)
+        await httpx_client.aclose()
+    if not meters:
+        return "no_meters_found", "", 0
+    return None, "", len(meters)
 
 
 def _copy_uploaded_csv(hass: HomeAssistant, uploaded_id: str, dest_path: str) -> None:
@@ -73,6 +110,11 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
        Messstellenbetreiber auch abgelaufene/historische Profile früherer
        Lieferantenwechsel sein) und lässt den Nutzer wählen, welche als
        Sensoren angelegt werden sollen.
+    5. Optionaler Historien-Import (TraveNetz-CSV).
+    6. Optionaler zweiter Login nur für 2.8.0 (Einspeisung), z.B. wenn der
+       Netzbetreiber dafür getrennte Zugangsdaten vergibt. Beide Felder
+       leer lassen überspringt den Schritt: 2.8.0 kommt dann wie bisher
+       über den ersten Login (sofern dieser ihn liefert).
     """
 
     VERSION = 1
@@ -81,6 +123,9 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         self._host: str | None = None
         self._username: str | None = None
         self._password: str | None = None
+        # Optionaler zweiter Login nur für 2.8.0 (leer = übersprungen).
+        self._export_username: str = ""
+        self._export_password: str = ""
         self._token: str | None = None
         self._meters: list[dict[str, str]] = []
         self._tariff_profiles: list[dict[str, str]] = []
@@ -182,6 +227,13 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             host = user_input[CONF_HOST]
 
             if await async_check_host_reachable(host, port=443):
+                # Duplikat-Prüfung HIER, vor dem ersten Login: Ein Abbruch
+                # nach erfolgreichem Login würde die Gateway-Session offen
+                # lassen (kein Logout), und das Gateway erlaubt nur EINE
+                # Session gleichzeitig, die laufende Integration würde
+                # dadurch gestört.
+                await self.async_set_unique_id(host)
+                self._abort_if_unique_id_configured()
                 self._host = host
                 self._add_status(
                     f"Gateway erreichbar ({host}:443, TLS)",
@@ -247,8 +299,6 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 debug_info = html.escape(err.details)
                 await self._async_close_client()
             else:
-                await self.async_set_unique_id(self._host)
-                self._abort_if_unique_id_configured()
                 fw = getattr(self._client, "firmware_version", None)
                 if fw:
                     self._add_status(
@@ -492,11 +542,11 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                     "No history import selected (skipped)",
                 )
 
-            # Daten für den abschließenden Zusammenfassungs-Schritt merken,
-            # der die vollständige Häkchen-Liste zeigt und die Einrichtung
-            # per Klick abschließt.
+            # Daten für die folgenden Schritte merken (zweiter Login, dann
+            # Zusammenfassung mit der vollständigen Häkchen-Liste, die die
+            # Einrichtung per Klick abschließt).
             self._entry_data = entry_data
-            return await self.async_step_summary()
+            return await self.async_step_export_credentials()
 
         if not any("ausgewählt" in s[0] for s in self._status_lines):
             meter_n = len(self._selected_meter_ids)
@@ -526,6 +576,79 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 "version": VERSION,
                 "status": self._status_block(
                     pending=[("Historien-Import (optional)", "History import (optional)")]
+                ),
+            },
+        )
+
+    async def async_step_export_credentials(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "ConfigFlowResult":
+        """Schritt 6 (optional): zweiter Login nur für 2.8.0 (Einspeisung).
+
+        Manche Netzbetreiber vergeben für Bezug (1.8.0) und Einspeisung
+        (2.8.0) getrennte HAN-Zugangsdaten. Beide Felder leer lassen
+        überspringt den Schritt, dann kommt 2.8.0 wie bisher über den
+        ersten Login. Ist nur EIN Feld gefüllt, erscheint ein Fehler.
+        Der Test läuft mit einer eigenen Session, die vorherige (erste)
+        Session wurde im history-Schritt bereits beendet.
+        """
+        errors: dict[str, str] = {}
+        debug_info = ""
+
+        if user_input is not None:
+            self._export_username = (user_input.get(CONF_USERNAME_EXPORT) or "").strip()
+            self._export_password = user_input.get(CONF_PASSWORD_EXPORT) or ""
+
+            if not self._export_username and not self._export_password:
+                self._add_status(
+                    "Zweiter Login für 2.8.0 übersprungen",
+                    "Second login for 2.8.0 skipped",
+                )
+                return await self.async_step_summary()
+
+            if not self._export_username or not self._export_password:
+                errors["base"] = "export_credentials_incomplete"
+            else:
+                error_key, debug_info, meter_count = await _async_test_export_login(
+                    self._host, self._export_username, self._export_password
+                )
+                if error_key is not None:
+                    errors["base"] = f"export_{error_key}"
+                else:
+                    self._entry_data[CONF_USERNAME_EXPORT] = self._export_username
+                    self._entry_data[CONF_PASSWORD_EXPORT] = self._export_password
+                    self._add_status(
+                        f"Zweiter Login für 2.8.0 gültig · {meter_count} Zähler",
+                        f"Second login for 2.8.0 valid · {meter_count} meter(s)",
+                    )
+                    return await self.async_step_summary()
+
+        schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_USERNAME_EXPORT,
+                    description={"suggested_value": self._export_username},
+                ): str,
+                vol.Optional(
+                    CONF_PASSWORD_EXPORT,
+                    description={"suggested_value": self._export_password},
+                ): str,
+            }
+        )
+        return self.async_show_form(
+            step_id="export_credentials",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "debug_info": debug_info,
+                "version": VERSION,
+                "status": self._status_block(
+                    pending=[
+                        (
+                            "Zweiter Login für 2.8.0 (optional)",
+                            "Second login for 2.8.0 (optional)",
+                        )
+                    ]
                 ),
             },
         )
@@ -567,6 +690,80 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> "ConfigFlowResult":
+        """Wird von Home Assistant gestartet, wenn der Coordinator
+        ConfigEntryAuthFailed meldet (Gateway lehnt den ersten Login ab,
+        z.B. nach Passwortwechsel beim Messstellenbetreiber). Ohne diesen
+        Schritt gäbe es keinen Weg über die Oberfläche, die Zugangsdaten zu
+        korrigieren, und HA würde bei jedem Fehlschlag einen Fehler loggen.
+        """
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "ConfigFlowResult":
+        """Fragt Benutzername/Passwort des ERSTEN Logins neu ab und testet
+        sie mit einer eigenen Kurz-Session (Login, Logout). Ein optionaler
+        zweiter Login (2.8.0) bleibt unverändert.
+        """
+        errors: dict[str, str] = {}
+        debug_info = ""
+        reauth_entry = self._get_reauth_entry()
+
+        if user_input is not None:
+            username = user_input[CONF_USERNAME]
+            password = user_input[CONF_PASSWORD]
+            httpx_client = httpx.AsyncClient(verify=False)
+            client = PPCSmgwClient(
+                httpx_client, reauth_entry.data[CONF_HOST], username, password
+            )
+            token: str | None = None
+            try:
+                token = await client.login()
+            except PPCSmgwAuthError as err:
+                errors["base"] = "invalid_auth"
+                debug_info = html.escape(err.details)
+            except PPCSmgwParsingError as err:
+                errors["base"] = "parsing_error"
+                debug_info = html.escape(err.details)
+            except PPCSmgwConnectionError as err:
+                errors["base"] = "cannot_connect"
+                debug_info = html.escape(err.details)
+            finally:
+                if token is not None:
+                    await client.logout(token)
+                await httpx_client.aclose()
+
+            if not errors:
+                return self.async_update_reload_and_abort(
+                    reauth_entry,
+                    data_updates={CONF_USERNAME: username, CONF_PASSWORD: password},
+                )
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_USERNAME,
+                    default=(user_input or {}).get(
+                        CONF_USERNAME, reauth_entry.data.get(CONF_USERNAME, "")
+                    ),
+                ): str,
+                vol.Required(CONF_PASSWORD, default=""): str,
+            }
+        )
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "host": reauth_entry.data[CONF_HOST],
+                "debug_info": debug_info,
+                "version": VERSION,
+            },
+        )
+
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> "ConfigFlowResult":
@@ -593,11 +790,15 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             self._host = reconfigure_entry.data[CONF_HOST]
             self._username = reconfigure_entry.data[CONF_USERNAME]
             self._password = reconfigure_entry.data[CONF_PASSWORD]
+            self._export_username = reconfigure_entry.data.get(CONF_USERNAME_EXPORT) or ""
+            self._export_password = reconfigure_entry.data.get(CONF_PASSWORD_EXPORT) or ""
 
         if user_input is not None:
             self._host = user_input[CONF_HOST]
             self._username = user_input[CONF_USERNAME]
             self._password = user_input[CONF_PASSWORD]
+            self._export_username = (user_input.get(CONF_USERNAME_EXPORT) or "").strip()
+            self._export_password = user_input.get(CONF_PASSWORD_EXPORT) or ""
 
             await self._async_close_client()
             self._httpx_client = httpx.AsyncClient(verify=False)
@@ -624,6 +825,20 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             finally:
                 await self._async_close_client()
 
+            # Optionaler zweiter Login (2.8.0): erst NACH dem Ende der ersten
+            # Session testen (das Gateway erlaubt nur eine Session
+            # gleichzeitig). Beide Felder leer = kein zweiter Login (auch zum
+            # nachträglichen Entfernen).
+            if not errors:
+                if bool(self._export_username) != bool(self._export_password):
+                    errors["base"] = "export_credentials_incomplete"
+                elif self._export_username:
+                    error_key, debug_info, _count = await _async_test_export_login(
+                        self._host, self._export_username, self._export_password
+                    )
+                    if error_key is not None:
+                        errors["base"] = f"export_{error_key}"
+
             if not errors:
                 # Host kann sich über diesen Flow ändern (siehe Docstring) -
                 # die unique_id (= Host, siehe async_step_credentials) muss
@@ -645,13 +860,17 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                     self.hass.config_entries.async_update_entry(
                         reconfigure_entry, unique_id=self._host
                     )
+                new_data = {
+                    CONF_HOST: self._host,
+                    CONF_USERNAME: self._username,
+                    CONF_PASSWORD: self._password,
+                }
+                if self._export_username and self._export_password:
+                    new_data[CONF_USERNAME_EXPORT] = self._export_username
+                    new_data[CONF_PASSWORD_EXPORT] = self._export_password
                 return self.async_update_reload_and_abort(
                     reconfigure_entry,
-                    data={
-                        CONF_HOST: self._host,
-                        CONF_USERNAME: self._username,
-                        CONF_PASSWORD: self._password,
-                    },
+                    data=new_data,
                 )
 
         schema = vol.Schema(
@@ -659,6 +878,17 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_HOST, default=self._host): str,
                 vol.Required(CONF_USERNAME, default=self._username): str,
                 vol.Required(CONF_PASSWORD, default=self._password or ""): str,
+                # suggested_value statt default: bei default würde ein
+                # geleertes Feld vom Validator wieder mit dem alten Wert
+                # gefüllt, der zweite Login ließe sich nie entfernen.
+                vol.Optional(
+                    CONF_USERNAME_EXPORT,
+                    description={"suggested_value": self._export_username},
+                ): str,
+                vol.Optional(
+                    CONF_PASSWORD_EXPORT,
+                    description={"suggested_value": self._export_password},
+                ): str,
             }
         )
         return self.async_show_form(
