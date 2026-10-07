@@ -26,7 +26,7 @@
       },
       "reconfigure": {
         "title": "Gateway-Verbindung aktualisieren",
-        "description": "Aktualisiere Host, Benutzername oder Passwort für dieses Gateway. Deine bestehenden Entitäten, der Verlauf und importierte Statistiken bleiben erhalten - nur die Verbindungsdaten ändern sich. Optional kannst du einen zweiten Login nur für 2.8.0 eintragen. Beide Felder leer lassen entfernt ihn wieder.\n\nOptional Historie erneut importieren: Lade eine TraveNetz-CSV für 1.8.0 und/oder 2.8.0 hoch. Upload-Felder leer lassen bedeutet kein Import.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
+        "description": "Aktualisiere Host, Benutzername oder Passwort für dieses Gateway. Deine bestehenden Entitäten, der Verlauf und importierte Statistiken bleiben erhalten - nur die Verbindungsdaten ändern sich. Optional kannst du einen zweiten Login nur für 2.8.0 eintragen. Beide Felder leer lassen entfernt ihn wieder.\n\nOptional Historie erneut importieren: Lade eine TraveNetz-CSV für 1.8.0 und/oder 2.8.0 hoch. Upload-Felder leer lassen bedeutet kein Import.\n\n**Reihenfolge der Felder:** 1. Upload = Datei für 1.8.0 (Netzbezug), 2. Startwert 1.8.0, 3. Upload = Datei für 2.8.0 (Einspeisung), 4. Startwert 2.8.0.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
         "data": {
           "host": "IP-Adresse / Hostname",
           "username": "Benutzername",
@@ -37,6 +37,12 @@
           "start_value": "Startwert 1.8.0 (nur Fallback)",
           "csv_upload_export": "TraveNetz-CSV-Export für 2.8.0 (Einspeisung), optional, läuft nach dem Speichern",
           "start_value_export": "Startwert 2.8.0 (nur Fallback)"
+        },
+        "data_description": {
+          "csv_upload": "Datei für 1.8.0 (Netzbezug). Leer lassen für keinen Import.",
+          "start_value": "Nur nötig, wenn kein Live-Wert abrufbar ist.",
+          "csv_upload_export": "Datei für 2.8.0 (Einspeisung). Leer lassen für keinen Import.",
+          "start_value_export": "Nur nötig, wenn kein Live-Wert abrufbar ist."
         }
       },
       "meters": {
@@ -55,12 +61,18 @@
       },
       "history": {
         "title": "Optional: Historische Daten importieren",
-        "description": "{status}\n\nLade eine TraveNetz-Exportdatei für OBIS 1-0:1.8.0 (Netzbezug) hoch, um sie zu importieren — keine Skalierung, keine andere Entity. Unterstützt den Tages- und den 15-Minuten-Export (auch für dynamische Tarife). Die Werte werden rückwärts vom aktuellen Zählerstand (live vom Gateway) verankert, ein Startwert muss nicht angegeben werden. Beide Felder leer lassen überspringt diesen Schritt komplett.\n\nLade optional auf dieselbe Weise eine zweite TraveNetz-Exportdatei für OBIS 1-0:2.8.0 (Einspeisung) hoch. Der Import für 2.8.0 funktioniert nur, wenn das Gateway 2.8.0 liefert (über den ersten oder den zweiten Login).\n\nInstallierte Integrationsversion: {version}",
+        "description": "{status}\n\nLade eine TraveNetz-Exportdatei für OBIS 1-0:1.8.0 (Netzbezug) hoch, um sie zu importieren — keine Skalierung, keine andere Entity. Unterstützt den Tages- und den 15-Minuten-Export (auch für dynamische Tarife). Die Werte werden rückwärts vom aktuellen Zählerstand (live vom Gateway) verankert, ein Startwert muss nicht angegeben werden. Beide Felder leer lassen überspringt diesen Schritt komplett.\n\nLade optional auf dieselbe Weise eine zweite TraveNetz-Exportdatei für OBIS 1-0:2.8.0 (Einspeisung) hoch. Der Import für 2.8.0 funktioniert nur, wenn das Gateway 2.8.0 liefert (über den ersten oder den zweiten Login).\n\n**Reihenfolge der Felder:** 1. Upload = Datei für 1.8.0 (Netzbezug), 2. Startwert 1.8.0, 3. Upload = Datei für 2.8.0 (Einspeisung), 4. Startwert 2.8.0.\n\nInstallierte Integrationsversion: {version}",
         "data": {
           "csv_upload": "TraveNetz-CSV-Export für 1.8.0 (Netzbezug)",
           "start_value": "Startwert 1.8.0 (nur Fallback, falls kein Live-Wert abrufbar)",
           "csv_upload_export": "TraveNetz-CSV-Export für 2.8.0 (Einspeisung)",
           "start_value_export": "Startwert 2.8.0 (nur Fallback, falls kein Live-Wert abrufbar)"
+        },
+        "data_description": {
+          "csv_upload": "Datei für 1.8.0 (Netzbezug). Leer lassen für keinen Import.",
+          "start_value": "Nur nötig, wenn kein Live-Wert abrufbar ist.",
+          "csv_upload_export": "Datei für 2.8.0 (Einspeisung). Leer lassen für keinen Import.",
+          "start_value_export": "Nur nötig, wenn kein Live-Wert abrufbar ist."
         }
       },
       "export_credentials": {

@@ -40,7 +40,7 @@
       },
       "reconfigure": {
         "title": "Update gateway connection",
-        "description": "Update the host, username or password for this gateway. Your existing entities, history and imported statistics are kept - only the connection details change. Optionally, enter a second login for 2.8.0 only. Leaving both fields empty removes it.\n\nOptionally import history again: upload a TraveNetz CSV for 1.8.0 and/or 2.8.0. Leave the upload fields empty for no import.\n\nInstalled integration version: {version}\n\n{debug_info}",
+        "description": "Update the host, username or password for this gateway. Your existing entities, history and imported statistics are kept - only the connection details change. Optionally, enter a second login for 2.8.0 only. Leaving both fields empty removes it.\n\nOptionally import history again: upload a TraveNetz CSV for 1.8.0 and/or 2.8.0. Leave the upload fields empty for no import.\n\n**Order of the fields:** 1st upload = file for 1.8.0 (grid draw), 2nd start value 1.8.0, 3rd upload = file for 2.8.0 (feed-in), 4th start value 2.8.0.\n\nInstalled integration version: {version}\n\n{debug_info}",
         "data": {
           "host": "IP address / hostname",
           "username": "Username",
@@ -51,16 +51,28 @@
           "start_value": "Start value 1.8.0 (fallback only)",
           "csv_upload_export": "TraveNetz CSV export for 2.8.0 (feed-in), optional, runs after saving",
           "start_value_export": "Start value 2.8.0 (fallback only)"
+        },
+        "data_description": {
+          "csv_upload": "File for 1.8.0 (grid draw). Leave empty for no import.",
+          "start_value": "Only needed if no live value is available.",
+          "csv_upload_export": "File for 2.8.0 (feed-in). Leave empty for no import.",
+          "start_value_export": "Only needed if no live value is available."
         }
       },
       "history": {
         "title": "Optional: import historical data",
-        "description": "{status}\n\nUpload a TraveNetz export file for OBIS 1-0:1.8.0 (grid draw) to import it — no scaling, no other entity. Supports the daily and the 15-minute export (also for dynamic tariffs). Values are anchored backwards from the current meter reading (live from the gateway); no start value is required. Leave both fields empty to skip this step entirely.\n\nOptionally upload a second TraveNetz export file for OBIS 1-0:2.8.0 (feed-in) in the same way. The 2.8.0 import only works if the gateway delivers 2.8.0 (through the first or the second login).\n\nInstalled integration version: {version}",
+        "description": "{status}\n\nUpload a TraveNetz export file for OBIS 1-0:1.8.0 (grid draw) to import it — no scaling, no other entity. Supports the daily and the 15-minute export (also for dynamic tariffs). Values are anchored backwards from the current meter reading (live from the gateway); no start value is required. Leave both fields empty to skip this step entirely.\n\nOptionally upload a second TraveNetz export file for OBIS 1-0:2.8.0 (feed-in) in the same way. The 2.8.0 import only works if the gateway delivers 2.8.0 (through the first or the second login).\n\n**Order of the fields:** 1st upload = file for 1.8.0 (grid draw), 2nd start value 1.8.0, 3rd upload = file for 2.8.0 (feed-in), 4th start value 2.8.0.\n\nInstalled integration version: {version}",
         "data": {
           "csv_upload": "TraveNetz CSV export for 1.8.0 (grid draw)",
           "start_value": "Start value 1.8.0 (fallback only, if no live value available)",
           "csv_upload_export": "TraveNetz CSV export for 2.8.0 (feed-in)",
           "start_value_export": "Start value 2.8.0 (fallback only, if no live value available)"
+        },
+        "data_description": {
+          "csv_upload": "File for 1.8.0 (grid draw). Leave empty for no import.",
+          "start_value": "Only needed if no live value is available.",
+          "csv_upload_export": "File for 2.8.0 (feed-in). Leave empty for no import.",
+          "start_value_export": "Only needed if no live value is available."
         }
       },
       "export_credentials": {
