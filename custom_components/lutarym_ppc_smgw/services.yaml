@@ -31,6 +31,14 @@ import_history:
       selector:
         entity:
           domain: sensor
+    obis:
+      required: false
+      default: "1-0:1.8.0"
+      selector:
+        select:
+          options:
+            - "1-0:1.8.0"
+            - "1-0:2.8.0"
     monthly_kwh:
       required: false
       example: '{"2026-01": 130.5, "2026-03": 95}'

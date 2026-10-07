@@ -1,4 +1,4 @@
-# Integrationsversion: 2.6.1
+# Integrationsversion: 2.7.0
 """PPC Smart Meter Gateway (iMSys) Integration für Home Assistant.
 
 Einstiegspunkt der Integration (von Home Assistant automatisch anhand des
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, timedelta
+from typing import Any
 
 import voluptuous as vol
 
@@ -29,6 +30,8 @@ from .const import (
     ATTR_CSV_PATH,
     ATTR_DRY_RUN,
     ATTR_HISTORY_IMPORT,
+    ATTR_HISTORY_IMPORT_EXPORT,
+    ATTR_OBIS,
     ATTR_MONTHLY_KWH,
     ATTR_SOURCE_ENTITY,
     ATTR_START_DATE,
@@ -43,6 +46,7 @@ from .const import (
     DOMAIN,
     SERVICE_IMPORT_HISTORY,
     TARGET_OBIS,
+    TARGET_OBIS_EXPORT,
 )
 from .coordinator import METER_OBIS_SEPARATOR, PPCSmgwCoordinator
 from .history_import import HistoryImportError, import_history
@@ -68,6 +72,10 @@ IMPORT_HISTORY_SCHEMA = vol.Schema(
         vol.Optional(ATTR_SOURCE_ENTITY): cv.entity_id,
         vol.Optional(ATTR_MONTHLY_KWH): {cv.string: vol.Coerce(float)},
         vol.Optional(ATTR_TARGET_ENTITY): cv.entity_id,
+        # Welcher Zählerstand gemeint ist, wenn target_entity fehlt.
+        vol.Optional(ATTR_OBIS, default=TARGET_OBIS): vol.In(
+            [TARGET_OBIS, TARGET_OBIS_EXPORT]
+        ),
         vol.Optional(ATTR_DRY_RUN, default=False): cv.boolean,
     }
 )
@@ -185,7 +193,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # das darf erst passieren, wenn dieses async_setup_entry bereits
     # vollständig durchgelaufen und zurückgekehrt ist, sonst käme es zu
     # einem Reload mitten in einem noch laufenden Setup.
-    if entry.data.get(ATTR_HISTORY_IMPORT):
+    if entry.data.get(ATTR_HISTORY_IMPORT) or entry.data.get(ATTR_HISTORY_IMPORT_EXPORT):
         hass.async_create_task(
             _async_process_pending_history_import(hass, entry, coordinator)
         )
@@ -201,33 +209,62 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
 async def _async_process_pending_history_import(
     hass: HomeAssistant, entry: ConfigEntry, coordinator: PPCSmgwCoordinator
 ) -> None:
-    """Verarbeitet einen einmaligen Historien-Import-Auftrag aus dem
+    """Führt die Historien-Aufträge nacheinander aus (erst 1.8.0, dann 2.8.0)
+    und entfernt sie danach aus entry.data."""
+    # Nach "Neu konfigurieren" kann das Setup kurz hintereinander mehrfach
+    # laufen (Neuladen durch Flow und Update-Listener). Nur das Setup, das
+    # noch das aktuelle Coordinator-Objekt besitzt, führt den Import aus.
+    if hass.data.get(DOMAIN, {}).get(entry.entry_id) is not coordinator:
+        _LOGGER.debug("SMGW Historien-Import: veraltetes Setup, übersprungen.")
+        return
+    jobs = (
+        (ATTR_HISTORY_IMPORT, TARGET_OBIS),
+        (ATTR_HISTORY_IMPORT_EXPORT, TARGET_OBIS_EXPORT),
+    )
+    for data_key, obis in jobs:
+        payload = entry.data.get(data_key)
+        if payload:
+            await _async_run_history_job(hass, entry, coordinator, payload, obis)
+
+    # Aufträge entfernen, damit sie nicht bei jedem Neustart erneut laufen
+    # (löst den Update-Listener aus -> ein einmaliger, harmloser Reload).
+    new_data = dict(entry.data)
+    new_data.pop(ATTR_HISTORY_IMPORT, None)
+    new_data.pop(ATTR_HISTORY_IMPORT_EXPORT, None)
+    hass.config_entries.async_update_entry(entry, data=new_data)
+
+
+async def _async_run_history_job(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    coordinator: PPCSmgwCoordinator,
+    payload: dict[str, Any],
+    obis: str,
+) -> None:
+    """Verarbeitet EINEN einmaligen Historien-Import-Auftrag (für den
+    übergebenen OBIS-Code) aus dem
 
     Einrichtungsassistenten (siehe config_flow.py:async_step_history) -
-    nur beim ALLERERSTEN Laden nach der Einrichtung relevant (entry.data
-    enthält den Auftrag nur dann). Entfernt ihn danach IMMER wieder aus
-    entry.data, egal ob erfolgreich oder nicht - ein fehlgeschlagener
-    Import soll nicht bei jedem Neustart erneut versucht werden. Das
-    Ergebnis (Erfolg wie Misserfolg) wird per persistenter Benachrichtigung
+    nur beim ALLERERSTEN Laden nach der Einrichtung relevant. Das
+    Entfernen aus entry.data übernimmt der Aufrufer
+    (_async_process_pending_history_import), egal ob erfolgreich oder
+    nicht - ein fehlgeschlagener Import soll nicht bei jedem Neustart
+    erneut versucht werden. Das Ergebnis (Erfolg wie Misserfolg) wird per persistenter Benachrichtigung
     UND im Log sichtbar gemacht, da an dieser Stelle keine interaktive
     Formular-Rückmeldung mehr möglich ist.
     """
-    payload = entry.data.get(ATTR_HISTORY_IMPORT)
-    if not payload:
-        _LOGGER.debug(
-            "SMGW Historien-Import: kein Auftrag in entry.data gefunden - "
-            "Einrichtungsassistent wurde ohne CSV-Pfad/Startdatum abgeschlossen, "
-            "nichts zu tun."
-        )
-        return
-    _LOGGER.info("SMGW Historien-Import: Auftrag gefunden, Modus=%s", payload.get("mode", "scaled"))
+    _LOGGER.info(
+        "SMGW Historien-Import: Auftrag für %s gefunden, Modus=%s",
+        obis,
+        payload.get("mode", "scaled"),
+    )
 
     registry = er.async_get(hass)
     target_entity: str | None = None
     for key, reading in coordinator.data.items():
         if METER_OBIS_SEPARATOR not in key:
             continue
-        if reading.get("obis") != TARGET_OBIS:
+        if reading.get("obis") != obis:
             continue
         unique_id = f"{entry.entry_id}_{key}"
         target_entity = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
@@ -238,11 +275,11 @@ async def _async_process_pending_history_import(
         _LOGGER.error(
             "SMGW Historien-Import: konnte die Ziel-Entity (OBIS %s) nach der "
             "Einrichtung nicht finden - Import wird übersprungen.",
-            TARGET_OBIS,
+            obis,
         )
         message = (
             f"Historien-Import konnte nicht durchgeführt werden: keine Entity "
-            f"für OBIS {TARGET_OBIS} gefunden."
+            f"für OBIS {obis} gefunden."
         )
     else:
         try:
@@ -380,15 +417,9 @@ async def _async_process_pending_history_import(
     persistent_notification.async_create(
         hass,
         message,
-        title="PPC SMGW Historien-Import",
-        notification_id=f"{DOMAIN}_history_import_{entry.entry_id}",
+        title=f"PPC SMGW Historien-Import {obis}",
+        notification_id=f"{DOMAIN}_history_import_{obis}_{entry.entry_id}",
     )
-
-    # Auftrag entfernen, damit er nicht bei jedem Neustart erneut läuft
-    # (löst den Update-Listener aus -> ein einmaliger, harmloser Reload).
-    new_data = dict(entry.data)
-    new_data.pop(ATTR_HISTORY_IMPORT, None)
-    hass.config_entries.async_update_entry(entry, data=new_data)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -416,10 +447,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 
-def _find_target_1_8_0_entity(hass: HomeAssistant, registry: er.EntityRegistry) -> str:
+def _find_target_entity(
+    hass: HomeAssistant, registry: er.EntityRegistry, obis: str
+) -> str:
     """Sucht über ALLE geladenen Gateways hinweg die Entity für
 
-    OBIS 1-0:1.8.0 ("Bezug") - siehe const.TARGET_OBIS. Wird nur genutzt,
+    den übergebenen OBIS-Code (1-0:1.8.0 "Bezug" oder 1-0:2.8.0 "Einspeisung"). Wird nur genutzt,
     wenn der Service ohne explizites `target_entity` aufgerufen wird.
     """
     matches: list[str] = []
@@ -427,7 +460,7 @@ def _find_target_1_8_0_entity(hass: HomeAssistant, registry: er.EntityRegistry) 
         for key, reading in coordinator.data.items():
             if METER_OBIS_SEPARATOR not in key:
                 continue
-            if reading.get("obis") != TARGET_OBIS:
+            if reading.get("obis") != obis:
                 continue
             unique_id = f"{entry_id}_{key}"
             entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
@@ -436,12 +469,12 @@ def _find_target_1_8_0_entity(hass: HomeAssistant, registry: er.EntityRegistry) 
 
     if not matches:
         raise HistoryImportError(
-            f"Keine Entity mit OBIS {TARGET_OBIS} gefunden - bitte 'target_entity' "
+            f"Keine Entity mit OBIS {obis} gefunden - bitte 'target_entity' "
             "im Service-Aufruf explizit angeben."
         )
     if len(matches) > 1:
         raise HistoryImportError(
-            f"Mehrere Entities mit OBIS {TARGET_OBIS} gefunden ({', '.join(matches)}) "
+            f"Mehrere Entities mit OBIS {obis} gefunden ({', '.join(matches)}) "
             "- bitte 'target_entity' im Service-Aufruf explizit angeben."
         )
     return matches[0]
@@ -474,8 +507,8 @@ async def _async_handle_import_history(hass: HomeAssistant, call: ServiceCall) -
         Live-Wert wird als automatischer Endanker frisch abgerufen.
     """
     registry = er.async_get(hass)
-    target_entity = call.data.get(ATTR_TARGET_ENTITY) or _find_target_1_8_0_entity(
-        hass, registry
+    target_entity = call.data.get(ATTR_TARGET_ENTITY) or _find_target_entity(
+        hass, registry, call.data[ATTR_OBIS]
     )
 
     coordinator = _coordinator_for_entity(hass, registry, target_entity)

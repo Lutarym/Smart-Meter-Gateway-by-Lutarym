@@ -26,13 +26,17 @@
       },
       "reconfigure": {
         "title": "Update gateway connection",
-        "description": "Update the host, username or password for this gateway. Your existing entities, history and imported statistics are kept - only the connection details change. Optionally, enter a second login for 2.8.0 only. Leaving both fields empty removes it.\n\nInstalled integration version: {version}\n\n{debug_info}",
+        "description": "Update the host, username or password for this gateway. Your existing entities, history and imported statistics are kept - only the connection details change. Optionally, enter a second login for 2.8.0 only. Leaving both fields empty removes it.\n\nOptionally import history again: upload a TraveNetz CSV for 1.8.0 and/or 2.8.0. Leave the upload fields empty for no import.\n\nInstalled integration version: {version}\n\n{debug_info}",
         "data": {
           "host": "IP address / hostname",
           "username": "Username",
           "password": "Password",
           "username_export": "Second login for 2.8.0: username (optional)",
-          "password_export": "Second login for 2.8.0: password (optional)"
+          "password_export": "Second login for 2.8.0: password (optional)",
+          "csv_upload": "TraveNetz CSV export 1.8.0 (optional, runs after saving)",
+          "start_value": "Start value 1.8.0 (fallback only)",
+          "csv_upload_export": "TraveNetz CSV export 2.8.0 (optional, runs after saving)",
+          "start_value_export": "Start value 2.8.0 (fallback only)"
         }
       },
       "meters": {
@@ -51,10 +55,12 @@
       },
       "history": {
         "title": "Optional: import historical data",
-        "description": "{status}\n\nUpload a TraveNetz export file for OBIS 1-0:1.8.0 (grid draw) to import it — no scaling, no other entity. Supports the daily and the 15-minute export (also for dynamic tariffs). Values are anchored backwards from the current meter reading (live from the gateway); no start value is required. Leave both fields empty to skip this step entirely.\n\nInstalled integration version: {version}",
+        "description": "{status}\n\nUpload a TraveNetz export file for OBIS 1-0:1.8.0 (grid draw) to import it — no scaling, no other entity. Supports the daily and the 15-minute export (also for dynamic tariffs). Values are anchored backwards from the current meter reading (live from the gateway); no start value is required. Leave both fields empty to skip this step entirely.\n\nOptionally upload a second TraveNetz export file for OBIS 1-0:2.8.0 (feed-in) in the same way. The 2.8.0 import only works if the gateway delivers 2.8.0 (through the first or the second login).\n\nInstalled integration version: {version}",
         "data": {
           "csv_upload": "TraveNetz CSV export",
-          "start_value": "Start value (fallback only, if no live value available)"
+          "start_value": "Start value (fallback only, if no live value available)",
+          "csv_upload_export": "TraveNetz CSV export 2.8.0 (feed-in)",
+          "start_value_export": "Start value 2.8.0 (fallback only, if no live value available)"
         }
       },
       "export_credentials": {
@@ -137,6 +143,10 @@
         "dry_run": {
           "name": "Dry run",
           "description": "If enabled, only computes and returns a summary (incl. monthly breakdown) without writing anything to the statistics."
+        },
+        "obis": {
+          "name": "OBIS code (optional)",
+          "description": "OBIS code used to auto-detect the sensor when no target entity is given. 1-0:1.8.0 (grid draw) or 1-0:2.8.0 (feed-in)."
         }
       }
     }

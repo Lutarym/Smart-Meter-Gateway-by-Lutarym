@@ -1,4 +1,4 @@
-# Integrationsversion: 2.6.1
+# Integrationsversion: 2.7.0
 """Konstanten für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 # Interner, technischer Bezeichner der Integration. Wird u.a. für
@@ -48,7 +48,7 @@ HAN_PATH = "/cgi-bin/hanservice.cgi"
 # Wird im Config-Flow-Dialog und als Geräte-Softwareversion angezeigt, damit
 # man die installierte Version prüfen kann, auch bevor eine Verbindung
 # erfolgreich zustande kommt.
-VERSION = "2.6.1"
+VERSION = "2.7.0"
 
 # Service "lutarym_ppc_smgw.import_history" - einmaliger Import einer
 # korrigierten historischen Zeitreihe für den 1-0:1.8.0-Sensor
@@ -80,3 +80,14 @@ ATTR_HISTORY_IMPORT = "history_import"
 # siehe METER_OBIS_SEPARATOR/coordinator.py für das Schlüssel-Format, in
 # dem dieser Code in coordinator.data auftaucht).
 TARGET_OBIS = "1-0:1.8.0"
+# OBIS-Code der Einspeisung. Der Historien-Import kann auch auf diesen
+# Sensor angewendet werden (Service-Feld "obis" bzw. zweites Upload-Feld
+# im Einrichtungsassistenten).
+TARGET_OBIS_EXPORT = "1-0:2.8.0"
+ATTR_OBIS = "obis"
+# Einrichtungsassistent: zweiter, getrennter Historien-Auftrag für 2.8.0
+# (gleiche Struktur wie ATTR_HISTORY_IMPORT, wird ebenfalls einmalig
+# verarbeitet und danach aus entry.data entfernt).
+ATTR_HISTORY_IMPORT_EXPORT = "history_import_export"
+ATTR_CSV_UPLOAD_EXPORT = "csv_upload_export"
+ATTR_START_VALUE_EXPORT = "start_value_export"

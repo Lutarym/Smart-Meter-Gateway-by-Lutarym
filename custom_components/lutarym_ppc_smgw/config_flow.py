@@ -1,4 +1,4 @@
-# Integrationsversion: 2.6.1
+# Integrationsversion: 2.7.0
 """Config Flow für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 from __future__ import annotations
@@ -31,8 +31,11 @@ from .api import (
 from .const import (
     ATTR_CSV_PATH,
     ATTR_CSV_UPLOAD,
+    ATTR_CSV_UPLOAD_EXPORT,
     ATTR_HISTORY_IMPORT,
+    ATTR_HISTORY_IMPORT_EXPORT,
     ATTR_START_VALUE,
+    ATTR_START_VALUE_EXPORT,
     CONF_PASSWORD_EXPORT,
     CONF_SCAN_INTERVAL,
     CONF_USERNAME_EXPORT,
@@ -474,6 +477,41 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
+    async def _async_prepare_csv_job(
+        self, uploaded_id: str | None, start_value: float | None, suffix: str
+    ) -> dict[str, Any] | None:
+        """Kopiert eine hochgeladene CSV dauerhaft und liefert den Auftrag
+        für die spätere Verarbeitung (None, wenn nichts hochgeladen wurde
+        oder das Speichern fehlschlug).
+
+        Die hochgeladene Datei liegt nur TEMPORÄR (bis der
+        process_uploaded_file-Kontext verlassen wird) und muss daher HIER
+        an einen dauerhaften Ort kopiert werden, da der eigentliche Import
+        erst SPÄTER läuft (nach dem Anlegen der Entities, siehe
+        __init__.py). `suffix` hält die Dateien für 1.8.0 und 2.8.0 getrennt.
+        """
+        if not uploaded_id:
+            return None
+        dest_path = self.hass.config.path(
+            f"lutarym_ppc_smgw_import_{self._host.replace('.', '_')}{suffix}.csv"
+        )
+        try:
+            await self.hass.async_add_executor_job(
+                _copy_uploaded_csv, self.hass, uploaded_id, dest_path
+            )
+        except OSError as err:
+            _LOGGER.error(
+                "SMGW Einrichtung: hochgeladene CSV konnte nicht gespeichert "
+                "werden: %s",
+                err,
+            )
+            return None
+        return {
+            "mode": "csv",
+            ATTR_CSV_PATH: dest_path,
+            "start_value": start_value if start_value is not None else 0.0,
+        }
+
     async def async_step_history(
         self, user_input: dict[str, Any] | None = None
     ) -> "ConfigFlowResult":
@@ -491,35 +529,16 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
 
             _LOGGER.debug("SMGW Einrichtung: history-Schritt user_input=%s", user_input)
 
-            history_payload: dict[str, Any] | None = None
-            uploaded_id = user_input.get(ATTR_CSV_UPLOAD)
-            start_value = user_input.get(ATTR_START_VALUE)
-
-            if uploaded_id:
-                # Die hochgeladene Datei liegt nur TEMPORÄR (bis der
-                # process_uploaded_file-Kontext verlassen wird) - sie muss
-                # HIER, synchron im Flow, an einen dauerhaften Ort kopiert
-                # werden, da der eigentliche Import erst SPÄTER läuft
-                # (nach dem Anlegen der Entities, siehe __init__.py).
-                dest_path = self.hass.config.path(
-                    f"lutarym_ppc_smgw_import_{self._host.replace('.', '_')}.csv"
-                )
-                try:
-                    await self.hass.async_add_executor_job(
-                        _copy_uploaded_csv, self.hass, uploaded_id, dest_path
-                    )
-                except OSError as err:
-                    _LOGGER.error(
-                        "SMGW Einrichtung: hochgeladene CSV konnte nicht gespeichert "
-                        "werden: %s",
-                        err,
-                    )
-                else:
-                    history_payload = {
-                        "mode": "csv",
-                        ATTR_CSV_PATH: dest_path,
-                        "start_value": start_value if start_value is not None else 0.0,
-                    }
+            history_payload = await self._async_prepare_csv_job(
+                user_input.get(ATTR_CSV_UPLOAD),
+                user_input.get(ATTR_START_VALUE),
+                suffix="",
+            )
+            history_payload_export = await self._async_prepare_csv_job(
+                user_input.get(ATTR_CSV_UPLOAD_EXPORT),
+                user_input.get(ATTR_START_VALUE_EXPORT),
+                suffix="_export",
+            )
 
             entry_data: dict[str, Any] = {
                 CONF_HOST: self._host,
@@ -536,7 +555,13 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                     "Historien-Import vorbereitet (wird nach Einrichtung ausgeführt)",
                     "History import prepared (runs after setup)",
                 )
-            else:
+            if history_payload_export:
+                entry_data[ATTR_HISTORY_IMPORT_EXPORT] = history_payload_export
+                self._add_status(
+                    "Historien-Import für 2.8.0 vorbereitet (wird nach Einrichtung ausgeführt)",
+                    "History import for 2.8.0 prepared (runs after setup)",
+                )
+            if not history_payload and not history_payload_export:
                 self._add_status(
                     "Kein Historien-Import gewählt (übersprungen)",
                     "No history import selected (skipped)",
@@ -567,6 +592,11 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                     selector.FileSelectorConfig(accept=".csv,text/csv")
                 ),
                 vol.Optional(ATTR_START_VALUE): kwh_selector,
+                # Zweiter, getrennter Import für 2.8.0 (Einspeisung).
+                vol.Optional(ATTR_CSV_UPLOAD_EXPORT): selector.FileSelector(
+                    selector.FileSelectorConfig(accept=".csv,text/csv")
+                ),
+                vol.Optional(ATTR_START_VALUE_EXPORT): kwh_selector,
             }
         )
         return self.async_show_form(
@@ -868,6 +898,23 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 if self._export_username and self._export_password:
                     new_data[CONF_USERNAME_EXPORT] = self._export_username
                     new_data[CONF_PASSWORD_EXPORT] = self._export_password
+                # Optionaler (erneuter) Historien-Import für 1.8.0 und/oder
+                # 2.8.0: wie bei der Ersteinrichtung als einmaliger Auftrag,
+                # der nach dem Neuladen verarbeitet wird (siehe __init__.py).
+                payload = await self._async_prepare_csv_job(
+                    user_input.get(ATTR_CSV_UPLOAD),
+                    user_input.get(ATTR_START_VALUE),
+                    suffix="",
+                )
+                payload_export = await self._async_prepare_csv_job(
+                    user_input.get(ATTR_CSV_UPLOAD_EXPORT),
+                    user_input.get(ATTR_START_VALUE_EXPORT),
+                    suffix="_export",
+                )
+                if payload:
+                    new_data[ATTR_HISTORY_IMPORT] = payload
+                if payload_export:
+                    new_data[ATTR_HISTORY_IMPORT_EXPORT] = payload_export
                 return self.async_update_reload_and_abort(
                     reconfigure_entry,
                     data=new_data,
@@ -889,6 +936,23 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_PASSWORD_EXPORT,
                     description={"suggested_value": self._export_password},
                 ): str,
+                # Optional: Historie (erneut) importieren. Leer = kein Import.
+                vol.Optional(ATTR_CSV_UPLOAD): selector.FileSelector(
+                    selector.FileSelectorConfig(accept=".csv,text/csv")
+                ),
+                vol.Optional(ATTR_START_VALUE): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        mode=selector.NumberSelectorMode.BOX, unit_of_measurement="kWh"
+                    )
+                ),
+                vol.Optional(ATTR_CSV_UPLOAD_EXPORT): selector.FileSelector(
+                    selector.FileSelectorConfig(accept=".csv,text/csv")
+                ),
+                vol.Optional(ATTR_START_VALUE_EXPORT): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        mode=selector.NumberSelectorMode.BOX, unit_of_measurement="kWh"
+                    )
+                ),
             }
         )
         return self.async_show_form(

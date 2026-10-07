@@ -5,6 +5,20 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
+## 2.7.0
+
+**Historien-Import auch für 2.8.0 (Einspeisung)**
+
+- Neu: Im Einrichtungsassistenten gibt es im Schritt "Historien-Import" ein
+  zweites, optionales Upload-Feld für eine TraveNetz-CSV mit den Werten für
+  1-0:2.8.0. Beide Importe laufen nach der Einrichtung nacheinander, jeder
+  mit eigener Benachrichtigung.
+- Neu: Auch in "Neu konfigurieren" lässt sich die Historie für 1.8.0 und/oder 2.8.0
+  (erneut) importieren. Der Import läuft nach dem Speichern.
+- Neu: Der Service `lutarym_ppc_smgw.import_history` hat das Feld `obis`
+  (1-0:1.8.0 oder 1-0:2.8.0). Ohne `target_entity` wird der Sensor damit
+  automatisch gefunden. Standard bleibt 1-0:1.8.0.
+
 ## 2.6.1
 
 **Fehlerbehebungen und Optimierungen nach Code-Review**
