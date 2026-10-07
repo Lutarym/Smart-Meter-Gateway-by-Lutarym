@@ -7,6 +7,10 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 
 ## 2.9.0
 
+- Fix: Die Upload-Felder tragen jetzt ihre Beschriftung direkt als Feldnamen aus dem
+  Code (z. B. "CSV Datei für 1.8.0 (Netzbezug, Energie bezogen)"). Dadurch ist auch
+  dann klar, wofür der Upload ist, wenn Home Assistant die Übersetzungstexte nicht
+  lädt (dann standen dort nur "csv_upload" und "start_value").
 - Fix: In "Neu konfigurieren" war nicht erkennbar, welches Upload-Feld zu 1.8.0
   und welches zu 2.8.0 gehört. Jetzt wählt man zuerst, für welchen Wert importiert
   werden soll (Auswahlfeld mit klaren Texten). Pro gewähltem Wert folgt ein

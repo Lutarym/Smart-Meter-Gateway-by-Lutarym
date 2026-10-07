@@ -54,6 +54,30 @@ _LOGGER = logging.getLogger(__name__)
 CONF_IMPORT_OBIS = "import_obis"
 
 # Antwortwerte der Frage "Vorhandene Statistik vor dem Import löschen?".
+# Lesbare Feldbeschriftungen direkt aus dem Code. Sie dienen als Feldname und
+# werden von Home Assistant 1:1 angezeigt, auch wenn die Übersetzungsdateien
+# (noch) nicht geladen sind. So ist immer klar, wofür welcher Upload ist.
+LABEL_UPLOAD_IMPORT = "CSV Datei für 1.8.0 (Netzbezug, Energie bezogen)"
+LABEL_START_IMPORT = "Startwert 1.8.0 in kWh (nur Fallback, optional)"
+LABEL_UPLOAD_EXPORT = "CSV Datei für 2.8.0 (Einspeisung, Energie geliefert)"
+LABEL_START_EXPORT = "Startwert 2.8.0 in kWh (nur Fallback, optional)"
+
+_FIELD_LABELS = {
+    ATTR_CSV_UPLOAD: LABEL_UPLOAD_IMPORT,
+    ATTR_START_VALUE: LABEL_START_IMPORT,
+    ATTR_CSV_UPLOAD_EXPORT: LABEL_UPLOAD_EXPORT,
+    ATTR_START_VALUE_EXPORT: LABEL_START_EXPORT,
+}
+
+
+def _field(user_input: dict[str, Any], key: str) -> Any:
+    """Wert eines Import-Felds lesen (lesbarer Feldname oder interner Schlüssel)."""
+    value = user_input.get(_FIELD_LABELS[key])
+    if value is None:
+        value = user_input.get(key)
+    return value
+
+
 _CLEAR_YES = "yes"
 _CLEAR_NO = "no"
 
@@ -566,13 +590,13 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             _LOGGER.debug("SMGW Einrichtung: history-Schritt user_input=%s", user_input)
 
             history_payload = await self._async_prepare_csv_job(
-                user_input.get(ATTR_CSV_UPLOAD),
-                user_input.get(ATTR_START_VALUE),
+                _field(user_input, ATTR_CSV_UPLOAD),
+                _field(user_input, ATTR_START_VALUE),
                 suffix="",
             )
             history_payload_export = await self._async_prepare_csv_job(
-                user_input.get(ATTR_CSV_UPLOAD_EXPORT),
-                user_input.get(ATTR_START_VALUE_EXPORT),
+                _field(user_input, ATTR_CSV_UPLOAD_EXPORT),
+                _field(user_input, ATTR_START_VALUE_EXPORT),
                 suffix="_export",
             )
 
@@ -626,15 +650,15 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         )
         schema = vol.Schema(
             {
-                vol.Optional(ATTR_CSV_UPLOAD): selector.FileSelector(
+                vol.Optional(LABEL_UPLOAD_IMPORT): selector.FileSelector(
                     selector.FileSelectorConfig(accept=".csv,text/csv")
                 ),
-                vol.Optional(ATTR_START_VALUE): kwh_selector,
+                vol.Optional(LABEL_START_IMPORT): kwh_selector,
                 # Zweiter, getrennter Import für 2.8.0 (Einspeisung).
-                vol.Optional(ATTR_CSV_UPLOAD_EXPORT): selector.FileSelector(
+                vol.Optional(LABEL_UPLOAD_EXPORT): selector.FileSelector(
                     selector.FileSelectorConfig(accept=".csv,text/csv")
                 ),
-                vol.Optional(ATTR_START_VALUE_EXPORT): kwh_selector,
+                vol.Optional(LABEL_START_EXPORT): kwh_selector,
             }
         )
         return self.async_show_form(
@@ -1072,16 +1096,16 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             if obis == "1.8.0":
                 payload = await self._async_prepare_csv_job(
-                    user_input.get(ATTR_CSV_UPLOAD),
-                    user_input.get(ATTR_START_VALUE),
+                    _field(user_input, ATTR_CSV_UPLOAD),
+                    _field(user_input, ATTR_START_VALUE),
                     suffix="",
                 )
                 if payload:
                     self._reconfigure_data[ATTR_HISTORY_IMPORT] = payload
             else:
                 payload = await self._async_prepare_csv_job(
-                    user_input.get(ATTR_CSV_UPLOAD_EXPORT),
-                    user_input.get(ATTR_START_VALUE_EXPORT),
+                    _field(user_input, ATTR_CSV_UPLOAD_EXPORT),
+                    _field(user_input, ATTR_START_VALUE_EXPORT),
                     suffix="_export",
                 )
                 if payload:
@@ -1089,8 +1113,8 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             self._reconfigure_import_queue.pop(0)
             return await self._async_next_reconfigure_import()
 
-        upload_key = ATTR_CSV_UPLOAD if obis == "1.8.0" else ATTR_CSV_UPLOAD_EXPORT
-        start_key = ATTR_START_VALUE if obis == "1.8.0" else ATTR_START_VALUE_EXPORT
+        upload_key = LABEL_UPLOAD_IMPORT if obis == "1.8.0" else LABEL_UPLOAD_EXPORT
+        start_key = LABEL_START_IMPORT if obis == "1.8.0" else LABEL_START_EXPORT
         schema = vol.Schema(
             {
                 vol.Optional(upload_key): selector.FileSelector(
