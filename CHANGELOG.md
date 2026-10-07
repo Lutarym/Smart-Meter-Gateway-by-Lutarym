@@ -5,9 +5,22 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
-## 2.7.5
+## 2.9.0
 
-Versionsnummer angehoben, keine weiteren Änderungen gegenüber 2.7.1.
+- Fix: In "Neu konfigurieren" war nicht erkennbar, welches Upload-Feld zu 1.8.0
+  und welches zu 2.8.0 gehört. Jetzt wählt man zuerst, für welchen Wert importiert
+  werden soll (Auswahlfeld mit klaren Texten). Pro gewähltem Wert folgt ein
+  eigener Schritt mit eigenem Titel und genau einem Upload-Feld.
+- Neu: Vor dem CSV-Import kommt die Frage, ob die vorhandene Langzeit-Statistik
+  des Sensors gelöscht werden soll (Einrichtung und Neu konfigurieren; im
+  Service das Feld `clear_existing`, Standard nein). Gelöscht wird alles, auch
+  Werte vor dem CSV-Beginn, nicht rückgängig zu machen. Die Live-Werte hinter
+  dem CSV-Ende bleiben erhalten.
+- Fix: Nach einem CSV-Import werden bereits vorhandene Statistikwerte hinter dem
+  Ende der CSV (der Netzbetreiber exportiert verzögert) auf die neue
+  Rechenkette gesetzt. Die echten Zählerstände bleiben, die Summenwerte werden
+  aus dem Zuwachs neu aufgebaut. Das verhindert einen scheinbaren Mehrverbrauch
+  am Übergang zwischen importierten und Live-Daten. Gilt für 1.8.0 und 2.8.0.
 
 ## 2.7.1
 

@@ -44,6 +44,11 @@ import_history:
       example: '{"2026-01": 130.5, "2026-03": 95}'
       selector:
         object: {}
+    clear_existing:
+      required: false
+      default: false
+      selector:
+        boolean: {}
     dry_run:
       required: false
       default: false

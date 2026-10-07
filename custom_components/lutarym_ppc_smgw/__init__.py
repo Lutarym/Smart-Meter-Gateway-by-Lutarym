@@ -1,4 +1,4 @@
-# Integrationsversion: 2.7.5
+# Integrationsversion: 2.9.0
 """PPC Smart Meter Gateway (iMSys) Integration für Home Assistant.
 
 Einstiegspunkt der Integration (von Home Assistant automatisch anhand des
@@ -28,6 +28,7 @@ from homeassistant.helpers.httpx_client import create_async_httpx_client
 from .api import PPCSmgwClient
 from .const import (
     ATTR_CSV_PATH,
+    ATTR_CLEAR_EXISTING,
     ATTR_DRY_RUN,
     ATTR_HISTORY_IMPORT,
     ATTR_HISTORY_IMPORT_EXPORT,
@@ -76,6 +77,7 @@ IMPORT_HISTORY_SCHEMA = vol.Schema(
         vol.Optional(ATTR_OBIS, default=TARGET_OBIS): vol.In(
             [TARGET_OBIS, TARGET_OBIS_EXPORT]
         ),
+        vol.Optional(ATTR_CLEAR_EXISTING, default=False): cv.boolean,
         vol.Optional(ATTR_DRY_RUN, default=False): cv.boolean,
     }
 )
@@ -333,6 +335,7 @@ async def _async_run_history_job(
                         target_name=target_name,
                         csv_path=payload["csv_path"],
                         anchor_end_value_kwh=extend_value,
+                        clear_existing=bool(payload.get("clear_existing")),
                         dry_run=False,
                     )
                 else:
@@ -342,6 +345,7 @@ async def _async_run_history_job(
                         target_name=target_name,
                         csv_path=payload["csv_path"],
                         start_value_kwh=float(payload.get("start_value") or 0.0),
+                        clear_existing=bool(payload.get("clear_existing")),
                         dry_run=False,
                     )
                 breakdown = ", ".join(
@@ -372,7 +376,10 @@ async def _async_run_history_job(
                     f"{summary['last_timestamp']}{bridge_note}\n"
                     f"Start: {summary['start_value_kwh']} kWh\n"
                     f"Ende: {summary['final_computed_kwh']} kWh\n"
-                    f"{summary['hourly_points']} Stundenwerte geschrieben.\n\n"
+                    f"{summary['hourly_points']} Stundenwerte geschrieben.\n"
+                    f"{'Vorhandene Statistik wurde vorher gelöscht.' if summary.get('cleared_existing_statistics') else 'Vorhandene Statistik wurde nicht gelöscht.'} "
+                    f"{summary.get('rebased_following_hours', 0)} Live-Stunden "
+                    f"nach dem CSV-Ende wurden auf die neue Kette angepasst.\n\n"
                     f"Monatsaufteilung: {breakdown}"
                 )
             else:
@@ -549,6 +556,7 @@ async def _async_handle_import_history(hass: HomeAssistant, call: ServiceCall) -
                 target_name=friendly_name,
                 csv_path=csv_path,
                 anchor_end_value_kwh=extend_value,
+                clear_existing=call.data[ATTR_CLEAR_EXISTING],
                 dry_run=call.data[ATTR_DRY_RUN],
             )
         else:
@@ -558,6 +566,7 @@ async def _async_handle_import_history(hass: HomeAssistant, call: ServiceCall) -
                 target_name=friendly_name,
                 csv_path=csv_path,
                 start_value_kwh=call.data.get(ATTR_START_VALUE) or 0.0,
+                clear_existing=call.data[ATTR_CLEAR_EXISTING],
                 dry_run=call.data[ATTR_DRY_RUN],
             )
         summary["target_entity"] = target_entity

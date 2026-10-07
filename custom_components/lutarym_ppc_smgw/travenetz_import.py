@@ -1,4 +1,4 @@
-# Integrationsversion: 2.7.5
+# Integrationsversion: 2.9.0
 """1:1-Import einer TraveNetz/iMSys-CSV-Exportdatei (stündliche
 
 "Energie bezogen"-Werte) in die Langzeit-Statistik dieser Integration.
@@ -36,7 +36,11 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from homeassistant.components.recorder.models import StatisticData
-from homeassistant.components.recorder.statistics import async_import_statistics
+from homeassistant.components.recorder import get_instance
+from homeassistant.components.recorder.statistics import (
+    async_import_statistics,
+    statistics_during_period,
+)
 from homeassistant.core import HomeAssistant
 
 from .history_import import HistoryImportError, build_energy_statistic_metadata
@@ -260,6 +264,77 @@ def filled_pending_range(
     return out
 
 
+async def _async_rebase_following_stats(
+    hass: HomeAssistant,
+    statistic_id: str,
+    last_ts: datetime,
+    last_state: float,
+) -> list[StatisticData] | None:
+    """Rechnet bereits vorhandene Statistikwerte NACH dem CSV-Ende neu.
+
+    Hinter dem Ende der CSV (der Netzbetreiber exportiert verzögert) liegen
+    meist schon Live-Werte dieses Sensors, deren sum-Werte aus einer anderen
+    Rechenkette stammen (z.B. von früheren Importen). Home Assistant bildet
+    Monats- und Jahresverbräuche aus Differenzen der sum-Werte, ein Versatz
+    zwischen beiden Ketten erscheint dann als scheinbarer Verbrauch.
+
+    Hier werden diese Zeilen auf die neue Kette gesetzt: der echte
+    Zählerstand (state) jeder Stunde bleibt unverändert, die sum wird aus
+    dem Zuwachs der Zählerstände von Stunde zu Stunde neu aufgebaut und
+    beginnt direkt hinter der letzten importierten Zeile bei 0. Ein sinkender
+    Zählerstand (Zählerwechsel, Anker aus späterer Zeit) erhöht die sum nicht.
+    Schlägt das Lesen fehl, wird None zurückgegeben (der Aufrufer löscht
+    dann nichts, damit keine Live-Werte verloren gehen).
+    """
+    start = last_ts + timedelta(hours=1)
+    try:
+        result = await get_instance(hass).async_add_executor_job(
+            statistics_during_period,
+            hass,
+            start,
+            None,
+            {statistic_id},
+            "hour",
+            None,
+            {"state", "sum"},
+        )
+    except Exception:  # noqa: BLE001 - Import darf daran nicht scheitern
+        _LOGGER.warning(
+            "SMGW CSV-Import: vorhandene Statistik nach dem CSV-Ende konnte "
+            "nicht gelesen werden, sie wird nicht angepasst.",
+            exc_info=True,
+        )
+        return None
+
+    entries = (result or {}).get(statistic_id) or []
+    rebased: list[StatisticData] = []
+    running = 0.0
+    prev_state = last_state
+    for entry in sorted(entries, key=lambda e: _entry_start(e)):
+        state = entry.get("state")
+        if state is None:
+            continue
+        if state >= prev_state:
+            running += state - prev_state
+        prev_state = state
+        rebased.append(
+            StatisticData(
+                start=_entry_start(entry),
+                state=round(float(state), 4),
+                sum=round(running, 4),
+            )
+        )
+    return rebased
+
+
+def _entry_start(entry: dict) -> datetime:
+    """Startzeit eines gelesenen Statistikeintrags (Zeitstempel oder datetime)."""
+    value = entry["start"]
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value, tz=_UTC)
+    return value if value.tzinfo else value.replace(tzinfo=_UTC)
+
+
 async def import_csv_history(
     hass: HomeAssistant,
     *,
@@ -269,12 +344,19 @@ async def import_csv_history(
     start_value_kwh: float = 0.0,
     extend_to_now_value_kwh: float | None = None,
     anchor_end_value_kwh: float | None = None,
+    clear_existing: bool = False,
     dry_run: bool = False,
 ) -> dict:
     """Liest eine TraveNetz-CSV-Exportdatei und schreibt die Werte in die
 
     Langzeit-Statistik der Ziel-Entity. Kein Skalieren, keine andere
     Entity - reine Übernahme echter Messwerte.
+
+    Mit clear_existing=True wird vor dem Schreiben die gesamte bereits
+    vorhandene Langzeit-Statistik der Ziel-Entity gelöscht (auch Werte VOR
+    dem CSV-Beginn, nicht rückgängig zu machen). Die Live-Werte hinter dem
+    CSV-Ende werden in jedem Fall auf die neue Kette umgerechnet und bleiben
+    erhalten.
 
     Zwei Kumulierungs-Modi:
 
@@ -396,7 +478,22 @@ async def import_csv_history(
     bridged_hours = 0
     bridge_skipped_reason: str | None = None
 
+    # Vorhandene Werte hinter dem CSV-Ende auf die neue Kette umrechnen
+    # (siehe _async_rebase_following_stats).
+    rebased: list[StatisticData] = []
+    rebase_read_failed = False
+    if stats:
+        result = await _async_rebase_following_stats(
+            hass, target_statistic_id, timestamps[-1], float(stats[-1]["state"])
+        )
+        if result is None:
+            rebase_read_failed = True
+        else:
+            rebased = result
+
     summary = {
+        "rebased_following_hours": len(rebased),
+        "cleared_existing_statistics": bool(clear_existing) and not rebase_read_failed,
         "hourly_points": len(stats),
         "csv_path": csv_path,
         "first_timestamp": timestamps[0].isoformat(),
@@ -419,5 +516,20 @@ async def import_csv_history(
     # homeassistant/components/recorder/statistics.py) - SYNCHRON, reiht nur
     # einen Job in die Recorder-Warteschlange ein und gibt None zurück. NICHT
     # awaiten, sonst "TypeError: 'NoneType' object can't be awaited".
+    # Nur auf ausdrücklichen Wunsch (clear_existing): vorhandene Statistik
+    # dieser Entity VORHER vollständig löschen, damit
+    # keine Reste früherer Importe oder alter Rechenketten die Werte
+    # verfälschen. Alle drei Aufträge (löschen, CSV, Folgewerte hinter dem
+    # CSV-Ende) laufen nacheinander in derselben Recorder-Warteschlange,
+    # die Reihenfolge ist also garantiert. Die Folgewerte wurden oben schon
+    # gelesen und werden nach dem Import neu geschrieben, damit die
+    # Live-Daten seit dem CSV-Ende erhalten bleiben.
+    # Konnten die Folgewerte nicht gelesen werden, wird NICHT gelöscht
+    # (sonst gingen die Live-Werte seit dem CSV-Ende verloren).
+    cleared = bool(clear_existing) and not rebase_read_failed
+    if cleared:
+        get_instance(hass).async_clear_statistics([target_statistic_id])
     async_import_statistics(hass, metadata, stats)
+    if rebased:
+        async_import_statistics(hass, metadata, rebased)
     return summary

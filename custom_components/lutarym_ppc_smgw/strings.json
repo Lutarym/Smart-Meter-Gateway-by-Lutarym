@@ -40,23 +40,14 @@
       },
       "reconfigure": {
         "title": "Update gateway connection",
-        "description": "Update the host, username or password for this gateway. Your existing entities, history and imported statistics are kept - only the connection details change. Optionally, enter a second login for 2.8.0 only. Leaving both fields empty removes it.\n\nOptionally import history again: upload a TraveNetz CSV for 1.8.0 and/or 2.8.0. Leave the upload fields empty for no import.\n\n**Order of the fields:** 1st upload = file for 1.8.0 (grid draw), 2nd start value 1.8.0, 3rd upload = file for 2.8.0 (feed-in), 4th start value 2.8.0.\n\nInstalled integration version: {version}\n\n{debug_info}",
+        "description": "Update the host, username or password for this gateway. Your existing entities, history and imported statistics are kept - only the connection details change. Optionally, enter a second login for 2.8.0 only. Leaving both fields empty removes it.\n\nOptionally import history again: choose below for which value you want to upload a TraveNetz CSV. Each chosen value gets its own step. Choosing nothing means no import.\n\nInstalled integration version: {version}\n\n{debug_info}",
         "data": {
           "host": "IP address / hostname",
           "username": "Username",
           "password": "Password",
           "username_export": "Second login for 2.8.0: username (optional)",
           "password_export": "Second login for 2.8.0: password (optional)",
-          "csv_upload": "TraveNetz CSV export for 1.8.0 (grid draw), optional, runs after saving",
-          "start_value": "Start value 1.8.0 (fallback only)",
-          "csv_upload_export": "TraveNetz CSV export for 2.8.0 (feed-in), optional, runs after saving",
-          "start_value_export": "Start value 2.8.0 (fallback only)"
-        },
-        "data_description": {
-          "csv_upload": "File for 1.8.0 (grid draw). Leave empty for no import.",
-          "start_value": "Only needed if no live value is available.",
-          "csv_upload_export": "File for 2.8.0 (feed-in). Leave empty for no import.",
-          "start_value_export": "Only needed if no live value is available."
+          "import_obis": "Import history (optional)"
         }
       },
       "history": {
@@ -88,6 +79,36 @@
         "description": "{status}\n\nAll steps completed successfully. Click **Submit** to create the integration.\n\nInstalled integration version: {version}",
         "data": {
           "confirm": "Complete setup"
+        }
+      },
+      "reconfigure_import_1_8_0": {
+        "title": "History import 1.8.0 (grid draw)",
+        "description": "Upload the TraveNetz CSV for 1.8.0 (grid draw, 'Energie bezogen') here. Without a file nothing is imported for 1.8.0.\n\nInstalled integration version: {version}",
+        "data": {
+          "csv_upload": "CSV file for 1.8.0 (grid draw)",
+          "start_value": "Start value 1.8.0 (fallback only)"
+        }
+      },
+      "reconfigure_import_2_8_0": {
+        "title": "History import 2.8.0 (feed-in)",
+        "description": "Upload the TraveNetz CSV for 2.8.0 (feed-in, 'Energie geliefert') here. Without a file nothing is imported for 2.8.0.\n\nInstalled integration version: {version}",
+        "data": {
+          "csv_upload_export": "CSV file for 2.8.0 (feed-in)",
+          "start_value_export": "Start value 2.8.0 (fallback only)"
+        }
+      },
+      "history_clear": {
+        "title": "Delete existing statistics?",
+        "description": "{status}\n\nFor the import of {targets}, the existing long-term statistics of this sensor can be deleted completely beforehand. This also removes all values before the start of the CSV and cannot be undone. Live values after the end of the CSV are kept.\n\nInstalled integration version: {version}",
+        "data": {
+          "clear_existing": "Delete existing statistics before the import"
+        }
+      },
+      "reconfigure_clear": {
+        "title": "Delete existing statistics?",
+        "description": "For the import of {targets}, the existing long-term statistics of this sensor can be deleted completely beforehand. This also removes all values before the start of the CSV and cannot be undone. Live values after the end of the CSV are kept.\n\nInstalled integration version: {version}",
+        "data": {
+          "clear_existing": "Delete existing statistics before the import"
         }
       }
     },
@@ -159,6 +180,10 @@
         "obis": {
           "name": "OBIS code (optional)",
           "description": "OBIS code used to auto-detect the sensor when no target entity is given. 1-0:1.8.0 (grid draw) or 1-0:2.8.0 (feed-in)."
+        },
+        "clear_existing": {
+          "name": "Delete existing statistics first",
+          "description": "CSV mode only: deletes all existing long-term statistics of the sensor before the import (including values before the CSV start, cannot be undone). Live values after the CSV end are kept."
         }
       }
     }

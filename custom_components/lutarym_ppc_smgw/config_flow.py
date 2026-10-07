@@ -1,4 +1,4 @@
-# Integrationsversion: 2.7.5
+# Integrationsversion: 2.9.0
 """Config Flow für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ from .const import (
     ATTR_HISTORY_IMPORT_EXPORT,
     ATTR_START_VALUE,
     ATTR_START_VALUE_EXPORT,
+    ATTR_CLEAR_EXISTING,
     CONF_PASSWORD_EXPORT,
     CONF_SCAN_INTERVAL,
     CONF_USERNAME_EXPORT,
@@ -48,6 +49,37 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Feldname der Mehrfachauswahl im Reconfigure-Dialog (welche Historie importiert werden soll).
+CONF_IMPORT_OBIS = "import_obis"
+
+# Antwortwerte der Frage "Vorhandene Statistik vor dem Import löschen?".
+_CLEAR_YES = "yes"
+_CLEAR_NO = "no"
+
+
+def _clear_question_schema() -> vol.Schema:
+    """Auswahlfeld Ja/Nein. Die Texte kommen direkt aus dem Code, daher ist
+    die Frage auch ohne Übersetzungsdatei eindeutig lesbar."""
+    return vol.Schema(
+        {
+            vol.Required(ATTR_CLEAR_EXISTING, default=_CLEAR_NO): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(
+                            value=_CLEAR_NO,
+                            label="Nein, vorhandene Werte nur überschreiben",
+                        ),
+                        selector.SelectOptionDict(
+                            value=_CLEAR_YES,
+                            label="Ja, ALLE vorhandenen Werte dieses Sensors vorher löschen (nicht rückgängig zu machen)",
+                        ),
+                    ],
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            )
+        }
+    )
 
 
 async def _async_test_export_login(
@@ -140,6 +172,10 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
         self._status_lines: list[tuple[str, str]] = []
         # Gemerkte Entry-Daten für den abschließenden summary-Schritt.
         self._entry_data: dict[str, Any] = {}
+        # Reconfigure: neue Daten und Warteschlange der gewählten Import-Schritte.
+        self._reconfigure_data: dict[str, Any] = {}
+        self._reconfigure_import_queue: list[str] = []
+        self._reconfigure_clear_asked: bool = False
         # WICHTIG: Dieselbe httpx-Client-/PPCSmgwClient-Instanz wird über
         # ALLE Einrichtungsschritte hinweg wiederverwendet (nicht pro
         # Schritt neu erzeugt!). Anders als beim früheren aiohttp-Ansatz
@@ -571,6 +607,8 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             # Zusammenfassung mit der vollständigen Häkchen-Liste, die die
             # Einrichtung per Klick abschließt).
             self._entry_data = entry_data
+            if history_payload or history_payload_export:
+                return await self.async_step_history_clear()
             return await self.async_step_export_credentials()
 
         if not any("ausgewählt" in s[0] for s in self._status_lines):
@@ -607,6 +645,43 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 "status": self._status_block(
                     pending=[("Historien-Import (optional)", "History import (optional)")]
                 ),
+            },
+        )
+
+    async def async_step_history_clear(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "ConfigFlowResult":
+        """Frage: vorhandene Statistik vor dem Import löschen?"""
+        if user_input is not None:
+            clear = user_input.get(ATTR_CLEAR_EXISTING) == _CLEAR_YES
+            for key in (ATTR_HISTORY_IMPORT, ATTR_HISTORY_IMPORT_EXPORT):
+                if key in self._entry_data:
+                    self._entry_data[key]["clear_existing"] = clear
+            self._add_status(
+                "Vorhandene Statistik wird vor dem Import gelöscht"
+                if clear
+                else "Vorhandene Statistik bleibt, Werte werden überschrieben",
+                "Existing statistics are deleted before the import"
+                if clear
+                else "Existing statistics are kept, values are overwritten",
+            )
+            return await self.async_step_export_credentials()
+
+        targets = [
+            label
+            for key, label in (
+                (ATTR_HISTORY_IMPORT, "1.8.0 (Netzbezug)"),
+                (ATTR_HISTORY_IMPORT_EXPORT, "2.8.0 (Einspeisung)"),
+            )
+            if key in self._entry_data
+        ]
+        return self.async_show_form(
+            step_id="history_clear",
+            data_schema=_clear_question_schema(),
+            description_placeholders={
+                "targets": ", ".join(targets),
+                "version": VERSION,
+                "status": self._status_block(),
             },
         )
 
@@ -871,15 +946,13 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
 
             if not errors:
                 # Host kann sich über diesen Flow ändern (siehe Docstring) -
-                # die unique_id (= Host, siehe async_step_credentials) muss
-                # deshalb hier mitgezogen werden, sonst laufen entry.data
-                # und unique_id auseinander (ein späterer echter
-                # Neueinrichtungsversuch für den ALTEN Host würde sonst
-                # fälschlich als "already_configured" blockiert). Manueller
-                # Duplikat-Check statt _abort_if_unique_id_configured(): ob
-                # dieser Helper innerhalb eines Reconfigure-Flows den
+                # die unique_id (= Host, siehe async_step_credentials) wird
+                # beim Abschluss (_async_finish_reconfigure) mitgezogen,
+                # damit entry.data und unique_id nicht auseinanderlaufen.
+                # Manueller Duplikat-Check statt _abort_if_unique_id_configured():
+                # ob dieser Helper innerhalb eines Reconfigure-Flows den
                 # eigenen, gerade bearbeiteten Entry zuverlässig ausschließt,
-                # ist nicht eindeutig - lieber explizit und nachvollziehbar.
+                # ist nicht eindeutig, lieber explizit und nachvollziehbar.
                 if self._host != reconfigure_entry.unique_id:
                     for other_entry in self.hass.config_entries.async_entries(DOMAIN):
                         if (
@@ -887,9 +960,6 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                             and other_entry.unique_id == self._host
                         ):
                             return self.async_abort(reason="already_configured")
-                    self.hass.config_entries.async_update_entry(
-                        reconfigure_entry, unique_id=self._host
-                    )
                 new_data = {
                     CONF_HOST: self._host,
                     CONF_USERNAME: self._username,
@@ -898,27 +968,16 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                 if self._export_username and self._export_password:
                     new_data[CONF_USERNAME_EXPORT] = self._export_username
                     new_data[CONF_PASSWORD_EXPORT] = self._export_password
-                # Optionaler (erneuter) Historien-Import für 1.8.0 und/oder
-                # 2.8.0: wie bei der Ersteinrichtung als einmaliger Auftrag,
-                # der nach dem Neuladen verarbeitet wird (siehe __init__.py).
-                payload = await self._async_prepare_csv_job(
-                    user_input.get(ATTR_CSV_UPLOAD),
-                    user_input.get(ATTR_START_VALUE),
-                    suffix="",
-                )
-                payload_export = await self._async_prepare_csv_job(
-                    user_input.get(ATTR_CSV_UPLOAD_EXPORT),
-                    user_input.get(ATTR_START_VALUE_EXPORT),
-                    suffix="_export",
-                )
-                if payload:
-                    new_data[ATTR_HISTORY_IMPORT] = payload
-                if payload_export:
-                    new_data[ATTR_HISTORY_IMPORT_EXPORT] = payload_export
-                return self.async_update_reload_and_abort(
-                    reconfigure_entry,
-                    data=new_data,
-                )
+                self._reconfigure_data = new_data
+                # Optionaler (erneuter) Historien-Import: jeder gewählte Wert
+                # bekommt einen eigenen Schritt mit eigenem Titel, damit
+                # eindeutig ist, welche Datei wohin gehört.
+                self._reconfigure_import_queue = [
+                    obis
+                    for obis in ("1.8.0", "2.8.0")
+                    if obis in (user_input.get(CONF_IMPORT_OBIS) or [])
+                ]
+                return await self._async_next_reconfigure_import()
 
         schema = vol.Schema(
             {
@@ -937,20 +996,21 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                     description={"suggested_value": self._export_password},
                 ): str,
                 # Optional: Historie (erneut) importieren. Leer = kein Import.
-                vol.Optional(ATTR_CSV_UPLOAD): selector.FileSelector(
-                    selector.FileSelectorConfig(accept=".csv,text/csv")
-                ),
-                vol.Optional(ATTR_START_VALUE): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        mode=selector.NumberSelectorMode.BOX, unit_of_measurement="kWh"
-                    )
-                ),
-                vol.Optional(ATTR_CSV_UPLOAD_EXPORT): selector.FileSelector(
-                    selector.FileSelectorConfig(accept=".csv,text/csv")
-                ),
-                vol.Optional(ATTR_START_VALUE_EXPORT): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        mode=selector.NumberSelectorMode.BOX, unit_of_measurement="kWh"
+                # Die Optionstexte kommen direkt aus dem Code, daher ist die
+                # Zuordnung immer eindeutig lesbar.
+                vol.Optional(CONF_IMPORT_OBIS, default=[]): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(
+                                value="1.8.0",
+                                label="Historie importieren für 1.8.0 (Netzbezug)",
+                            ),
+                            selector.SelectOptionDict(
+                                value="2.8.0",
+                                label="Historie importieren für 2.8.0 (Einspeisung)",
+                            ),
+                        ],
+                        multiple=True,
                     )
                 ),
             }
@@ -960,6 +1020,120 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=schema,
             errors=errors,
             description_placeholders={"debug_info": debug_info, "version": VERSION},
+        )
+
+    async def _async_next_reconfigure_import(self) -> "ConfigFlowResult":
+        """Geht zum nächsten gewählten Import-Schritt oder schließt ab."""
+        if self._reconfigure_import_queue:
+            if self._reconfigure_import_queue[0] == "1.8.0":
+                return await self.async_step_reconfigure_import_1_8_0()
+            return await self.async_step_reconfigure_import_2_8_0()
+        has_import = (
+            ATTR_HISTORY_IMPORT in self._reconfigure_data
+            or ATTR_HISTORY_IMPORT_EXPORT in self._reconfigure_data
+        )
+        if has_import and not self._reconfigure_clear_asked:
+            return await self.async_step_reconfigure_clear()
+        return await self._async_finish_reconfigure()
+
+    async def async_step_reconfigure_clear(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "ConfigFlowResult":
+        """Frage: vorhandene Statistik vor dem Import löschen?"""
+        if user_input is not None:
+            clear = user_input.get(ATTR_CLEAR_EXISTING) == _CLEAR_YES
+            for key in (ATTR_HISTORY_IMPORT, ATTR_HISTORY_IMPORT_EXPORT):
+                if key in self._reconfigure_data:
+                    self._reconfigure_data[key]["clear_existing"] = clear
+            self._reconfigure_clear_asked = True
+            return await self._async_finish_reconfigure()
+
+        targets = [
+            label
+            for key, label in (
+                (ATTR_HISTORY_IMPORT, "1.8.0 (Netzbezug)"),
+                (ATTR_HISTORY_IMPORT_EXPORT, "2.8.0 (Einspeisung)"),
+            )
+            if key in self._reconfigure_data
+        ]
+        return self.async_show_form(
+            step_id="reconfigure_clear",
+            data_schema=_clear_question_schema(),
+            description_placeholders={
+                "targets": ", ".join(targets),
+                "version": VERSION,
+            },
+        )
+
+    async def _async_reconfigure_import_form(
+        self, step_id: str, obis: str, user_input: dict[str, Any] | None
+    ) -> "ConfigFlowResult":
+        """Gemeinsame Logik der beiden Upload-Schritte (je EIN Upload-Feld)."""
+        if user_input is not None:
+            if obis == "1.8.0":
+                payload = await self._async_prepare_csv_job(
+                    user_input.get(ATTR_CSV_UPLOAD),
+                    user_input.get(ATTR_START_VALUE),
+                    suffix="",
+                )
+                if payload:
+                    self._reconfigure_data[ATTR_HISTORY_IMPORT] = payload
+            else:
+                payload = await self._async_prepare_csv_job(
+                    user_input.get(ATTR_CSV_UPLOAD_EXPORT),
+                    user_input.get(ATTR_START_VALUE_EXPORT),
+                    suffix="_export",
+                )
+                if payload:
+                    self._reconfigure_data[ATTR_HISTORY_IMPORT_EXPORT] = payload
+            self._reconfigure_import_queue.pop(0)
+            return await self._async_next_reconfigure_import()
+
+        upload_key = ATTR_CSV_UPLOAD if obis == "1.8.0" else ATTR_CSV_UPLOAD_EXPORT
+        start_key = ATTR_START_VALUE if obis == "1.8.0" else ATTR_START_VALUE_EXPORT
+        schema = vol.Schema(
+            {
+                vol.Optional(upload_key): selector.FileSelector(
+                    selector.FileSelectorConfig(accept=".csv,text/csv")
+                ),
+                vol.Optional(start_key): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        mode=selector.NumberSelectorMode.BOX, unit_of_measurement="kWh"
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=schema,
+            description_placeholders={"version": VERSION},
+        )
+
+    async def async_step_reconfigure_import_1_8_0(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "ConfigFlowResult":
+        """Upload der TraveNetz-CSV für 1.8.0 (Netzbezug)."""
+        return await self._async_reconfigure_import_form(
+            "reconfigure_import_1_8_0", "1.8.0", user_input
+        )
+
+    async def async_step_reconfigure_import_2_8_0(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "ConfigFlowResult":
+        """Upload der TraveNetz-CSV für 2.8.0 (Einspeisung)."""
+        return await self._async_reconfigure_import_form(
+            "reconfigure_import_2_8_0", "2.8.0", user_input
+        )
+
+    async def _async_finish_reconfigure(self) -> "ConfigFlowResult":
+        """Übernimmt die neuen Daten (inkl. optionaler Import-Aufträge)."""
+        reconfigure_entry = self._get_reconfigure_entry()
+        if self._host != reconfigure_entry.unique_id:
+            self.hass.config_entries.async_update_entry(
+                reconfigure_entry, unique_id=self._host
+            )
+        return self.async_update_reload_and_abort(
+            reconfigure_entry, data=self._reconfigure_data
         )
 
     @staticmethod

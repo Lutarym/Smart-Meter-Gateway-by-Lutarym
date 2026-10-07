@@ -1,4 +1,4 @@
-# Integrationsversion: 2.7.5
+# Integrationsversion: 2.9.0
 """Konstanten für die PPC Smart Meter Gateway (iMSys) Integration."""
 
 # Interner, technischer Bezeichner der Integration. Wird u.a. für
@@ -48,7 +48,7 @@ HAN_PATH = "/cgi-bin/hanservice.cgi"
 # Wird im Config-Flow-Dialog und als Geräte-Softwareversion angezeigt, damit
 # man die installierte Version prüfen kann, auch bevor eine Verbindung
 # erfolgreich zustande kommt.
-VERSION = "2.7.5"
+VERSION = "2.9.0"
 
 # Service "lutarym_ppc_smgw.import_history" - einmaliger Import einer
 # korrigierten historischen Zeitreihe für den 1-0:1.8.0-Sensor
@@ -60,6 +60,8 @@ ATTR_SOURCE_ENTITY = "source_entity"
 ATTR_MONTHLY_KWH = "monthly_kwh"
 ATTR_TARGET_ENTITY = "target_entity"
 ATTR_DRY_RUN = "dry_run"
+# Ob die vorhandene Langzeit-Statistik vor dem CSV-Import gelöscht wird.
+ATTR_CLEAR_EXISTING = "clear_existing"
 # 1:1-CSV-Import (travenetz_import.py) - Pfad zu einer TraveNetz-
 # Exportdatei auf dem HA-Host (z.B. /config/imsys_export.csv). Hat
 # Vorrang vor dem skalierten Quell-Entity-Modus, falls beides angegeben ist.

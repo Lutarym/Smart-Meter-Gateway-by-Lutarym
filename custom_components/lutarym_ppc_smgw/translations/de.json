@@ -26,23 +26,14 @@
       },
       "reconfigure": {
         "title": "Gateway-Verbindung aktualisieren",
-        "description": "Aktualisiere Host, Benutzername oder Passwort für dieses Gateway. Deine bestehenden Entitäten, der Verlauf und importierte Statistiken bleiben erhalten - nur die Verbindungsdaten ändern sich. Optional kannst du einen zweiten Login nur für 2.8.0 eintragen. Beide Felder leer lassen entfernt ihn wieder.\n\nOptional Historie erneut importieren: Lade eine TraveNetz-CSV für 1.8.0 und/oder 2.8.0 hoch. Upload-Felder leer lassen bedeutet kein Import.\n\n**Reihenfolge der Felder:** 1. Upload = Datei für 1.8.0 (Netzbezug), 2. Startwert 1.8.0, 3. Upload = Datei für 2.8.0 (Einspeisung), 4. Startwert 2.8.0.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
+        "description": "Aktualisiere Host, Benutzername oder Passwort für dieses Gateway. Deine bestehenden Entitäten, der Verlauf und importierte Statistiken bleiben erhalten - nur die Verbindungsdaten ändern sich. Optional kannst du einen zweiten Login nur für 2.8.0 eintragen. Beide Felder leer lassen entfernt ihn wieder.\n\nOptional Historie erneut importieren: Wähle unten, für welchen Wert du eine TraveNetz-CSV hochladen willst. Pro gewähltem Wert folgt ein eigener Schritt. Nichts wählen bedeutet kein Import.\n\nInstallierte Integrationsversion: {version}\n\n{debug_info}",
         "data": {
           "host": "IP-Adresse / Hostname",
           "username": "Benutzername",
           "password": "Passwort",
           "username_export": "Zweiter Login für 2.8.0: Benutzername (optional)",
           "password_export": "Zweiter Login für 2.8.0: Passwort (optional)",
-          "csv_upload": "TraveNetz-CSV-Export für 1.8.0 (Netzbezug), optional, läuft nach dem Speichern",
-          "start_value": "Startwert 1.8.0 (nur Fallback)",
-          "csv_upload_export": "TraveNetz-CSV-Export für 2.8.0 (Einspeisung), optional, läuft nach dem Speichern",
-          "start_value_export": "Startwert 2.8.0 (nur Fallback)"
-        },
-        "data_description": {
-          "csv_upload": "Datei für 1.8.0 (Netzbezug). Leer lassen für keinen Import.",
-          "start_value": "Nur nötig, wenn kein Live-Wert abrufbar ist.",
-          "csv_upload_export": "Datei für 2.8.0 (Einspeisung). Leer lassen für keinen Import.",
-          "start_value_export": "Nur nötig, wenn kein Live-Wert abrufbar ist."
+          "import_obis": "Historie importieren (optional)"
         }
       },
       "meters": {
@@ -88,6 +79,36 @@
         "description": "{status}\n\nAlle Schritte wurden erfolgreich durchlaufen. Klicke auf **Absenden**, um die Integration anzulegen.\n\nInstallierte Integrationsversion: {version}",
         "data": {
           "confirm": "Einrichtung abschließen"
+        }
+      },
+      "reconfigure_import_1_8_0": {
+        "title": "Historien-Import 1.8.0 (Netzbezug)",
+        "description": "Lade hier die TraveNetz-CSV für 1.8.0 (Netzbezug, 'Energie bezogen') hoch. Ohne Datei wird für 1.8.0 nichts importiert.\n\nInstallierte Integrationsversion: {version}",
+        "data": {
+          "csv_upload": "CSV-Datei für 1.8.0 (Netzbezug)",
+          "start_value": "Startwert 1.8.0 (nur Fallback)"
+        }
+      },
+      "reconfigure_import_2_8_0": {
+        "title": "Historien-Import 2.8.0 (Einspeisung)",
+        "description": "Lade hier die TraveNetz-CSV für 2.8.0 (Einspeisung, 'Energie geliefert') hoch. Ohne Datei wird für 2.8.0 nichts importiert.\n\nInstallierte Integrationsversion: {version}",
+        "data": {
+          "csv_upload_export": "CSV-Datei für 2.8.0 (Einspeisung)",
+          "start_value_export": "Startwert 2.8.0 (nur Fallback)"
+        }
+      },
+      "history_clear": {
+        "title": "Vorhandene Statistik löschen?",
+        "description": "{status}\n\nFür den Import von {targets} kann die bereits vorhandene Langzeit-Statistik dieses Sensors vorher komplett gelöscht werden. Das entfernt auch alle Werte vor dem Beginn der CSV und lässt sich nicht rückgängig machen. Die Live-Werte nach dem Ende der CSV bleiben erhalten.\n\nInstallierte Integrationsversion: {version}",
+        "data": {
+          "clear_existing": "Vorhandene Statistik vor dem Import löschen"
+        }
+      },
+      "reconfigure_clear": {
+        "title": "Vorhandene Statistik löschen?",
+        "description": "Für den Import von {targets} kann die bereits vorhandene Langzeit-Statistik dieses Sensors vorher komplett gelöscht werden. Das entfernt auch alle Werte vor dem Beginn der CSV und lässt sich nicht rückgängig machen. Die Live-Werte nach dem Ende der CSV bleiben erhalten.\n\nInstallierte Integrationsversion: {version}",
+        "data": {
+          "clear_existing": "Vorhandene Statistik vor dem Import löschen"
         }
       }
     },
@@ -159,6 +180,10 @@
         "obis": {
           "name": "OBIS-Code (optional)",
           "description": "OBIS-Code, mit dem der Sensor automatisch gefunden wird, wenn keine Ziel-Entity angegeben ist. 1-0:1.8.0 (Netzbezug) oder 1-0:2.8.0 (Einspeisung)."
+        },
+        "clear_existing": {
+          "name": "Vorhandene Statistik vorher löschen",
+          "description": "Nur CSV-Modus: löscht vor dem Import die gesamte vorhandene Langzeit-Statistik des Sensors (auch Werte vor dem CSV-Beginn, nicht rückgängig zu machen). Live-Werte nach dem CSV-Ende bleiben erhalten."
         }
       }
     }
