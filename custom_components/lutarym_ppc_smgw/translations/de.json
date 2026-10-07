@@ -33,8 +33,7 @@
           "password": "Passwort",
           "username_export": "Zweiter Login für 2.8.0: Benutzername (optional)",
           "password_export": "Zweiter Login für 2.8.0: Passwort (optional)",
-          "import_obis": "Historie importieren (optional)",
-          "scan_interval": "Abrufintervall"
+          "import_obis": "Historie importieren (optional)"
         }
       },
       "meters": {
@@ -111,6 +110,10 @@
         "data": {
           "clear_existing": "Vorhandene Statistik vor dem Import löschen"
         }
+      },
+      "reconfigure_interval": {
+        "title": "Abrufintervall",
+        "description": "Wie oft soll das Gateway abgefragt werden? Empfehlung: alle 24 Stunden. Bei zu vielen Abfragen kann die HAN Schnittstelle sperren."
       }
     },
     "error": {

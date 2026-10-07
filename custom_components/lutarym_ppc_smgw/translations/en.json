@@ -33,8 +33,7 @@
           "password": "Password",
           "username_export": "Second login for 2.8.0: username (optional)",
           "password_export": "Second login for 2.8.0: password (optional)",
-          "import_obis": "Import history (optional)",
-          "scan_interval": "Polling interval"
+          "import_obis": "Import history (optional)"
         }
       },
       "meters": {
@@ -111,6 +110,10 @@
         "data": {
           "clear_existing": "Delete existing statistics before the import"
         }
+      },
+      "reconfigure_interval": {
+        "title": "Polling interval",
+        "description": "How often should the gateway be polled? Recommended: every 24 hours. Too many requests can lock the HAN interface."
       }
     },
     "error": {

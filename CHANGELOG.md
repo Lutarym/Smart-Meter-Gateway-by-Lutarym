@@ -7,6 +7,11 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 
 ## 2.9.0
 
+- Das Abrufintervall steht jetzt standardmäßig auf 24 Stunden (gilt auch für bestehende
+  Einträge, die noch nichts gewählt hatten). Die Feldbeschriftung enthält den Hinweis,
+  dass zu viele Abfragen die HAN Schnittstelle sperren können.
+- Das Abrufintervall kommt in "Neu konfigurieren" jetzt als eigenes Fenster direkt nach den
+  Zugangsdaten, immer, auch wenn kein Import gewählt wird.
 - Neu: Das Abrufintervall ist jetzt eine Auswahl (alle 5, 15, 30 Minuten, jede Stunde,
   alle 12 Stunden, alle 24 Stunden). Einstellbar in "Neu konfigurieren" und in
   "Konfigurieren".

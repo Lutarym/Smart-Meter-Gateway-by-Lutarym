@@ -19,7 +19,7 @@ CONF_METER_IDS = "meter_ids"
 # gefundenen Profile abrufen", eine leere Liste bedeutet "explizit keine".
 CONF_TARIFF_IDS = "tariff_ids"
 
-DEFAULT_SCAN_INTERVAL_SECONDS = 900  # Entspricht dem Ausleseintervall des Gateways (15 Min).
+DEFAULT_SCAN_INTERVAL_SECONDS = 86400  # 24 Stunden (empfohlen, schont die HAN Schnittstelle).
 
 # Schlüssel für das in entry.options gespeicherte, nutzerkonfigurierbare
 # Poll-Intervall in Sekunden. Fehlt der Schlüssel (Entries von vor dieser

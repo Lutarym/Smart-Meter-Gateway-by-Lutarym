@@ -86,7 +86,13 @@ _INTERVAL_CHOICES_MIN = (
     (30, "alle 30 Minuten"),
     (60, "jede Stunde"),
     (720, "alle 12 Stunden"),
-    (1440, "alle 24 Stunden"),
+    (1440, "alle 24 Stunden (empfohlen)"),
+)
+
+# Feldbeschriftung samt Hinweis direkt aus dem Code (immer sichtbar).
+LABEL_INTERVAL = (
+    "Abrufintervall. Empfehlung: alle 24 Stunden, denn bei zu vielen "
+    "Abfragen kann die HAN Schnittstelle sperren"
 )
 
 
@@ -1027,11 +1033,6 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                     new_data[CONF_USERNAME_EXPORT] = self._export_username
                     new_data[CONF_PASSWORD_EXPORT] = self._export_password
                 self._reconfigure_data = new_data
-                self._reconfigure_scan_interval = int(
-                    user_input.get(
-                        CONF_SCAN_INTERVAL, _current_interval_minutes(reconfigure_entry)
-                    )
-                ) * 60
                 # Optionaler (erneuter) Historien-Import: jeder gewählte Wert
                 # bekommt einen eigenen Schritt mit eigenem Titel, damit
                 # eindeutig ist, welche Datei wohin gehört.
@@ -1040,7 +1041,9 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                     for obis in ("1.8.0", "2.8.0")
                     if obis in (user_input.get(CONF_IMPORT_OBIS) or [])
                 ]
-                return await self._async_next_reconfigure_import()
+                # Das Abrufintervall kommt IMMER als eigenes Fenster, auch
+                # wenn kein Import gewählt wurde.
+                return await self.async_step_reconfigure_interval()
 
         schema = vol.Schema(
             {
@@ -1058,10 +1061,6 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_PASSWORD_EXPORT,
                     description={"suggested_value": self._export_password},
                 ): str,
-                vol.Required(
-                    CONF_SCAN_INTERVAL,
-                    default=str(_current_interval_minutes(reconfigure_entry)),
-                ): _interval_selector(_current_interval_minutes(reconfigure_entry)),
                 # Optional: Historie (erneut) importieren. Leer = kein Import.
                 # Die Optionstexte kommen direkt aus dem Code, daher ist die
                 # Zuordnung immer eindeutig lesbar.
@@ -1088,6 +1087,23 @@ class PPCSmgwConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders={"debug_info": debug_info, "version": VERSION},
         )
+
+    async def async_step_reconfigure_interval(
+        self, user_input: dict[str, Any] | None = None
+    ) -> "ConfigFlowResult":
+        """Eigenes Fenster: Abrufintervall (kommt immer, mit oder ohne Import)."""
+        reconfigure_entry = self._get_reconfigure_entry()
+        current = _current_interval_minutes(reconfigure_entry)
+        if user_input is not None:
+            chosen = user_input.get(LABEL_INTERVAL, user_input.get(CONF_SCAN_INTERVAL))
+            self._reconfigure_scan_interval = int(chosen if chosen is not None else current) * 60
+            return await self._async_next_reconfigure_import()
+        schema = vol.Schema(
+            {
+                vol.Required(LABEL_INTERVAL, default=str(current)): _interval_selector(current),
+            }
+        )
+        return self.async_show_form(step_id="reconfigure_interval", data_schema=schema)
 
     async def _async_next_reconfigure_import(self) -> "ConfigFlowResult":
         """Geht zum nächsten gewählten Import-Schritt oder schließt ab."""
@@ -1285,7 +1301,10 @@ class PPCSmgwOptionsFlow(OptionsFlow):
                     CONF_METER_IDS: user_input[CONF_METER_IDS],
                     CONF_TARIFF_IDS: user_input.get(CONF_TARIFF_IDS, []),
                     # Minuten (UI) -> Sekunden (intern).
-                    CONF_SCAN_INTERVAL: int(user_input[CONF_SCAN_INTERVAL]) * 60,
+                    CONF_SCAN_INTERVAL: int(
+                        user_input.get(LABEL_INTERVAL, user_input.get(CONF_SCAN_INTERVAL))
+                    )
+                    * 60,
                 }
             )
 
@@ -1311,7 +1330,7 @@ class PPCSmgwOptionsFlow(OptionsFlow):
                     selector.SelectSelectorConfig(options=tariff_options, multiple=True)
                 ),
                 vol.Required(
-                    CONF_SCAN_INTERVAL, default=str(current_scan_interval_minutes)
+                    LABEL_INTERVAL, default=str(current_scan_interval_minutes)
                 ): _interval_selector(current_scan_interval_minutes),
             }
         )
