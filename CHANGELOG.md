@@ -5,7 +5,7 @@ Die Versionsnummer muss immer mit `custom_components/lutarym_ppc_smgw/manifest.j
 ("version") und `custom_components/lutarym_ppc_smgw/const.py` (`VERSION`)
 übereinstimmen.
 
-## 2.9.0
+## 2.9.5
 
 - Das Abrufintervall steht jetzt standardmäßig auf 24 Stunden (gilt auch für bestehende
   Einträge, die noch nichts gewählt hatten). Die Feldbeschriftung enthält den Hinweis,
